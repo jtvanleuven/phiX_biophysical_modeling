@@ -1,0 +1,198 @@
+---
+title: "Fitness score analysis"
+author: "Yesol Sapozhnikov"
+date: "8/6/2020"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+scores <- read_csv("../data/combined_var_scores_yesol.csv")
+var_counts <- read_csv("../data/vars_counts_per_samples.csv")
+```
+
+Investigate relationship between statistics (beta estimate, SE, p-val) and raw counts.
+Need to understand this before making a decision how to apply a cutoff.
+
+Consider singles only:
+```{r}
+scores_sing <- filter(scores, nchar(vars) <= 5)
+yesol_wd_sing <- filter(yesol_vars_wd, nchar(vars) <= 5) %>% select(vars, t0:t35_rep3, t70_rep1:t70_rep3)
+```
+
+Plot SE vs pval, color by beta
+```{r}
+ggplot(scores_sing, aes(x=se_betaML, y=pval, color = betaML)) +
+  geom_point()
+ggplot(scores_sing, aes(x=se_betaML, y=pval, fill=betaML)) +
+  geom_point(shape = 21) +
+  scale_fill_gradient2(low = "royalblue", mid = "white", high = "red2") +
+  theme(panel.background = element_blank())
+```
+
+```{r}
+ggplot(scores_sing, aes(x=betaML, y=se_betaML)) +
+  geom_point()
+```
+
+```{r}
+ggplot(scores_sing, aes(x=betaML, y=pval)) +
+  geom_point()
+```
+
+
+
+Take variants that are zero after t0 ("lethal" mutants), plot SE vs pval, color by counts (at t0)
+First separate out dataframes for those for lethals, and non-lethals(survivor mutants)
+```{r}
+# Subset out count df to calculate rowsum for non-t0 time points
+nont0_sums <- as.data.frame(yesol_wd_sing[,c(1, 3:8)])
+# Get index of "lethal" variants (non-t0 rowsum is zero)
+lethals_idx <- which(rowSums(nont0_sums[, -1]) == 0)
+# Subset out lethal variants' counts and score data
+lethals_ct <- yesol_wd_sing[lethals_idx,]
+lethals_score <- scores_sing[lethals_idx,]
+# Subset out the rest
+survivors_ct <- yesol_wd_sing[-lethals_idx,]
+survivors_score <- scores_sing[-lethals_idx,]
+```
+
+Plot
+```{r}
+lethals_score$init_ct <- yesol_wd_sing[lethals_idx, "t0"]
+ggplot(lethals_score, aes(x=se_betaML, y=pval, color=init_ct)) +
+  geom_point()
+```
+What is that outlier dot with small SE and high p-value?
+```{r}
+lethals_score %>% filter(se_betaML < 0.005)
+```
+Above: 18 variants with initial count of 0. They do have non-zero count in other t70 samples. 
+Will store these variants but remove from current analysis.
+```{r}
+all_zeroes_var <- lethals_score[lethals_score$init_ct == 0,]$vars
+lethals_score <- filter(lethals_score,!vars %in% all_zeroes_var)
+
+# re-plot
+ggplot(lethals_score, aes(x=se_betaML, y=pval, color=init_ct)) +
+  geom_point()
+```
+
+```{r}
+survivors_score %>% filter(pval > 0.3) %>%
+  ggplot(aes(x=se_betaML, y=pval)) + geom_point()
+```
+```{r}
+survivors_score %>% filter(se_betaML > 0.016, se_betaML < 0.02, pval > 0.38)
+```
+```{r}
+survivors_ct[survivors_ct$vars == "L32M",]
+```
+The curve in above plot is due to variants that are all zero and then some counts (mostly) in t70_rep2
+
+
+
+
+### What causes large SE? ###
+
+```{r}
+ggplot(scores_sing, aes(x=se_betaML, y=pval, color=betaML)) +
+  geom_point()
+```
+What are the counts of variants with worst SE (>0.03)?
+```{r}
+largest_se <- pull(survivors_score %>% 
+                     filter(se_betaML > 0.03) %>% 
+                     select(vars))
+largest_se
+filter(survivors_ct, vars %in% largest_se)
+```
+```{r}
+filter(survivors_score, vars %in% largest_se) %>% arrange(desc(se_betaML))
+```
+
+
+What are the counts of variants with large p-values? (>0.4)
+```{r}
+large_pval <- pull(survivors_score %>%
+                     filter(pval > 0.4) %>%
+                     select(vars))
+filter(survivors_ct, vars %in% large_pval)
+```
+```{r}
+survivors_score[survivors_score$vars == "S27C",]
+```
+=> Evenly large counts across samples result in large p-value but small SE.
+
+
+Large SE and large p-value
+```{r}
+larges <- pull(survivors_score %>%
+                     filter(pval > 0.4 & se_betaML > 0.03) %>%
+                     select(vars))
+filter(survivors_ct, vars %in% larges)
+```
+Large SE, smaller p-value
+```{r}
+large_se_sm_p <- pull(survivors_score %>%
+                     filter(pval < 0.3 & se_betaML > 0.03) %>%
+                     select(vars))
+filter(survivors_ct, vars %in% large_se_sm_p)
+```
+```{r}
+survivors_score[survivors_score$vars == "L20R",]
+```
+
+
+Small SE, large p-value
+```{r}
+sm_se_lg_p <- pull(survivors_score %>%
+                     filter(pval > 0.4 & se_betaML < 0.005) %>%
+                     select(vars))
+filter(survivors_ct, vars %in% sm_se_lg_p)
+filter(survivors_score, vars %in% sm_se_lg_p)
+```
+
+
+
+### Where do variants with low counts fall in the plot? ###
+
+Create categories of low count variants to plot as overlay
+```{r}
+# Variants with 10 or less count across samples
+lowest_ct <- pull(filter(survivors_ct, rowSums(survivors_ct[,-1]) < 11) %>% select(vars)) 
+df1 <- filter(survivors_score, vars %in% lowest_ct)
+# Variants with counts between 10 and 20 across samples
+lower_ct <- pull(filter(survivors_ct, rowSums(survivors_ct[,-1]) < 21) %>% select(vars))
+df2 <- filter(survivors_score, vars %in% lower_ct)
+
+# Plot as different color
+ggplot(scores_sing, aes(x=se_betaML, y=pval, color=betaML)) +
+  geom_point() +
+  geom_point(data = df2, mapping = aes(x=se_betaML, y=pval), color = "orange") +
+  geom_point(data = df1, mapping = aes(x=se_betaML, y=pval), color = "red") 
+```
+
+```{r}
+filter(df2, se_betaML < 0.01)
+```
+
+```{r}
+survivors_ct[survivors_ct$vars == "T24F",]
+```
+=> low counts with small SE & small p-values have non-zero counts in t35 samples.
+
+```{r}
+filter(df2, se_betaML > 0.01)
+```
+```{r}
+survivors_ct[survivors_ct$vars == "P104V",]
+```
+=> low counts with large p-values have non-zero counts in t70 samples.
+
+
+=> cannot filter low count variants based on SE
+
+
+
+

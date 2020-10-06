@@ -1,0 +1,227 @@
+---
+title: "replicate_comparisons"
+author: "Yesol Sapozhnikov"
+date: "9/15/2020"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(gridExtra)
+
+# Read in csvs
+yesol_df <- read.csv("../data/dada2result_yesol.csv", stringsAsFactors = F)[,-1]# First col in csv is just index numbers.
+yesol_df2 <- read.csv("../data/dada2result_yesol2.csv", stringsAsFactors = F)[,-1]
+
+# Assign values to NAs:
+yesol_df2$AAsub[is.na(yesol_df2$AAsub)] <- "wt"
+yesol_df2$nmut_offtarget[is.na(yesol_df2$nmut_offtarget)] <- 0
+
+vars <- unique(yesol_df2$AAsub)
+yesol_vars_wd <- as.data.frame(vars)
+samples <- unique(yesol_df2$sample)
+for (i in 1:length(samples)){
+  df_i <- filter(yesol_df2, sample == samples[i])
+  for (j in 1:length(vars)){
+    if (vars[j] %in% df_i$AAsub){
+      yesol_vars_wd[j, samples[i]] <- df_i[df_i$AAsub==vars[j],]$count
+    } else {
+      yesol_vars_wd[j, samples[i]] <- 0
+    }
+  }
+}
+
+# Select columns (use t70_repX)
+filt_vars_wd <- select(yesol_vars_wd, vars, t0:t35_rep3, t70_rep1:t70_rep3)
+# Get variants that are present in all samples
+for (i in 1:nrow(filt_vars_wd)){
+  j = 0
+  for (s in 2:8){ #check sample by sample and add to j whenever non-zero
+    if (filt_vars_wd[i, s] != 0){
+      j = j + 1
+    }
+  }
+  filt_vars_wd$obs_samples[i] <- j
+}
+filt_vars_wd <- filt_vars_wd %>% filter(obs_samples == 7) %>% select(-obs_samples)
+
+# Convert to a long form, create columns needed for scoring
+filt_vars <- gather(filt_vars_wd, t0:t70_rep3, key = "sample", value = "count")
+for (i in 1:nrow(filt_vars)){
+  filt_vars$time[i] <- as.numeric(sub("t","",unlist(str_split(filt_vars$sample[i], "_r"))[1]))
+  splits <- unlist(str_split(filt_vars$sample[i], "_"))
+  filt_vars$rep[i] <- splits[length(splits)]
+}
+filt_vars[filt_vars$time==0,]$rep <- "all"
+
+# Following function will generate a list of 3 dataframes: scores, se, p-values.
+source("../scripts/fn_calc_score.R")
+filt_scores <-calc_score(filt_vars, c(0, 35, 70), 3)
+```
+
+For combined variant score:
+```{r}
+# Combine replicate scores
+vars <- filt_scores$scores$vars # get a vector of var names
+filt_combined <- as.data.frame(matrix(data = NA, nrow = length(vars), ncol = 4))
+colnames(filt_combined) <- c("vars","betaML","var_betaML","eps")
+filt_combined$vars <- vars
+
+# Following function will combine replicate scores and output a list of:
+# combined score, variance, and eps
+source("../scripts/fn_calc_rmle.R")
+# Run this function row by row (vars):
+for (j in 2:length(vars)){ # skip wt
+  y <- as.numeric(filt_scores$scores[j,-1]) # y is a num vector of replicate scores (slope) 
+  sigma2i <- (as.numeric(filt_scores$se[j,-1]))^2 # square of SE
+  outlist <- calc_rmle(y, sigma2i, 50) # iteration = 50 in the paper but try smaller number and check eps
+  filt_combined$betaML[j] <- outlist$betaML
+  filt_combined$var_betaML[j] <- outlist$var_betaML
+  filt_combined$eps[j] <- outlist$eps
+}
+```
+
+Pairwise comparison of replicate scores
+```{r}
+df <- filt_scores$scores
+cor(df[,2:4])
+```
+
+plot:
+```{r}
+plot(df[,2:4])
+```
+
+Try again with pair-wise filtering instead
+Get corr. coef and scatterplots of all 3 pairs:
+```{r}
+# Read in csvs
+yesol_df <- read.csv("../data/dada2result_yesol.csv", stringsAsFactors = F)[,-1]# First col in csv is just index numbers.
+yesol_df2 <- read.csv("../data/dada2result_yesol2.csv", stringsAsFactors = F)[,-1]
+
+# Assign values to NAs:
+yesol_df2$AAsub[is.na(yesol_df2$AAsub)] <- "wt"
+yesol_df2$nmut_offtarget[is.na(yesol_df2$nmut_offtarget)] <- 0
+
+vars <- unique(yesol_df2$AAsub)
+yesol_vars_wd <- as.data.frame(vars)
+samples <- unique(yesol_df2$sample)
+for (i in 1:length(samples)){
+  df_i <- filter(yesol_df2, sample == samples[i])
+  for (j in 1:length(vars)){
+    if (vars[j] %in% df_i$AAsub){
+      yesol_vars_wd[j, samples[i]] <- df_i[df_i$AAsub==vars[j],]$count
+    } else {
+      yesol_vars_wd[j, samples[i]] <- 0
+    }
+  }
+}
+
+# rep1 + rep2
+pair1_wd <- yesol_vars_wd %>% select(vars, t0, t35_rep1:t35_rep2, t70_rep1:t70_rep2)
+# Get variants that are present in all samples
+for (i in 1:nrow(pair1_wd)){
+  j = 0
+  for (s in 1:5){ #check sample by sample and add to j whenever non-zero
+    if (pair1_wd[i, s] != 0){
+      j = j + 1
+    }
+  }
+  pair1_wd$obs_samples[i] <- j
+}
+pair1_wd <- pair1_wd %>% filter(obs_samples != 0) %>% select(-obs_samples)
+pair1_vars <- gather(pair1_wd, t0:t70_rep2, key = "sample", value = "count")
+for (i in 1:nrow(pair1_vars)){
+  pair1_vars$time[i] <- as.numeric(sub("t","",unlist(str_split(pair1_vars$sample[i], "_r"))[1]))
+  splits <- unlist(str_split(pair1_vars$sample[i], "_"))
+  pair1_vars$rep[i] <- splits[length(splits)]
+}
+pair1_vars[pair1_vars$time==0,]$rep <- "all"
+
+# Following function will generate a list of 3 dataframes: scores, se, p-values.
+source("../scripts/fn_calc_score.R")
+pair1_scores <-calc_score(pair1_vars, c(0, 35, 70), 2)
+
+# correlation
+df <- pair1_scores$scores
+pair1.cor <- cor(df[2:3])[1,2]
+pair1.plot <- ggplot(df, aes(x=rep1, y=rep2)) + geom_point()
+
+
+# rep2 + rep3
+pair2_wd <- yesol_vars_wd %>% select(vars, t0, t35_rep2:t35_rep3, t70_rep2:t70_rep3)
+# Get variants that are present in all samples
+for (i in 1:nrow(pair2_wd)){
+  j = 0
+  for (s in 1:5){ #check sample by sample and add to j whenever non-zero
+    if (pair2_wd[i, s] != 0){
+      j = j + 1
+    }
+  }
+  pair2_wd$obs_samples[i] <- j
+}
+pair2_wd <- pair2_wd %>% filter(obs_samples != 0) %>% select(-obs_samples)
+# change rep names to make it easier to run through fn_calc_score
+pair2_wd <- rename(pair2_wd, t35_rep1 = t35_rep3, t70_rep1 = t70_rep3)
+pair2_vars <- gather(pair2_wd, t0:t70_rep1, key = "sample", value = "count")
+for (i in 1:nrow(pair2_vars)){
+  pair2_vars$time[i] <- as.numeric(sub("t","",unlist(str_split(pair2_vars$sample[i], "_r"))[1]))
+  splits <- unlist(str_split(pair2_vars$sample[i], "_"))
+  pair2_vars$rep[i] <- splits[length(splits)]
+}
+pair2_vars[pair2_vars$time==0,]$rep <- "all"
+# Following function will generate a list of 3 dataframes: scores, se, p-values.
+source("../scripts/fn_calc_score.R")
+pair2_scores <-calc_score(pair2_vars, c(0, 35, 70), 2)
+# correlation
+df <- pair2_scores$scores
+pair2.cor <- cor(df[2:3])[1,2]
+pair2.plot <- ggplot(df, aes(x=rep2, y=rep1)) + geom_point() +
+  labs(x="rep2",y="rep3")
+
+# rep1 + rep3
+pair3_wd <- yesol_vars_wd %>% select(vars,t0,t35_rep1,t35_rep3,t70_rep1,t70_rep3)
+# Get variants that are present in all samples
+for (i in 1:nrow(pair3_wd)){
+  j = 0
+  for (s in 1:5){ #check sample by sample and add to j whenever non-zero
+    if (pair3_wd[i, s] != 0){
+      j = j + 1
+    }
+  }
+  pair3_wd$obs_samples[i] <- j
+}
+pair3_wd <- pair3_wd %>% filter(obs_samples != 0) %>% select(-obs_samples)
+# change rep names to make it easier to run through fn_calc_score
+pair3_wd <- rename(pair3_wd, t35_rep2 = t35_rep3, t70_rep2 = t70_rep3)
+pair3_vars <- gather(pair3_wd, t0:t70_rep2, key = "sample", value = "count")
+for (i in 1:nrow(pair3_vars)){
+  pair3_vars$time[i] <- as.numeric(sub("t","",unlist(str_split(pair3_vars$sample[i], "_r"))[1]))
+  splits <- unlist(str_split(pair3_vars$sample[i], "_"))
+  pair3_vars$rep[i] <- splits[length(splits)]
+}
+pair3_vars[pair3_vars$time==0,]$rep <- "all"
+# Following function will generate a list of 3 dataframes: scores, se, p-values.
+source("../scripts/fn_calc_score.R")
+pair3_scores <-calc_score(pair3_vars, c(0, 35, 70), 2)
+# correlation
+df <- pair3_scores$scores
+pair3.cor <- cor(df[2:3])[1,2]
+pair3.plot <- ggplot(df, aes(x=rep1, y=rep2)) + geom_point() +
+  labs(x="rep1",y="rep3")
+```
+
+(Renamed reps within each pair for technicality in running the function)
+
+Display results - corr coef
+```{r}
+corrs <- c(pair1.cor, pair2.cor, pair3.cor)
+names(corrs) <- c("reps1+2","reps2+3","reps1+3")
+corrs
+```
+Plots:
+```{r}
+grid.arrange(pair1.plot, pair2.plot, pair3.plot, nrow=1, ncol=3)
+```
+
+

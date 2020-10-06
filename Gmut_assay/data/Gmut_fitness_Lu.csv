@@ -1,0 +1,8 @@
+mutant,ave_fitness,wt_codon,mut_codon
+R8H,22.98,CGC,CAC
+D82K,9.34,GAT,AAA
+Y107A,17.78,TAT,GCT
+D108H,5.49,GAT,CAC
+R115H,22.02,CGC,CAC
+G118I,18.03,GGT,ATC
+wt,21.6,,

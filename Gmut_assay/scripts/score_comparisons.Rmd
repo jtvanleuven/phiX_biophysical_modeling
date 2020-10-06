@@ -1,0 +1,527 @@
+---
+title: "score_comparisons"
+author: "Yesol Sapozhnikov"
+date: "8/18/2020"
+output: html_document
+---
+
+This document compares scores from my assay data to others (e.g. SDM viability data, Zoe's data, etc). For this analysis, consider t70_repX for now as before.
+
+
+Packages and data import
+```{r}
+library(tidyverse)
+viability <- read.csv("~/Projects/phix_host/phix_jt/Craigs_21Site_ddG_Viability_data.csv")[,-c(1:2)] # SDM viability data
+yesol_df2 <- read.csv("../data/dada2result_yesol2.csv", stringsAsFactors = F)[,-1] # Vars count data
+combined_scores <- read.csv("../data/combined_var_scores_yesol.csv") # scores prev. calculated
+# Assign values to NAs:
+yesol_df2$AAsub[is.na(yesol_df2$AAsub)] <- "wt"
+yesol_df2$nmut_offtarget[is.na(yesol_df2$nmut_offtarget)] <- 0
+```
+
+
+
+Create a new dataframe of each variant's counts over time points 
+```{r}
+vars <- unique(yesol_df2$AAsub)
+all_vars_wd <- as.data.frame(vars)
+samples <- unique(yesol_df2$sample)
+for (i in 1:length(samples)){
+  df_i <- filter(yesol_df2, sample == samples[i])
+  for (j in 1:length(vars)){
+    if (vars[j] %in% df_i$AAsub){
+      all_vars_wd[j, samples[i]] <- df_i[df_i$AAsub==vars[j],]$count
+    } else {
+      all_vars_wd[j, samples[i]] <- 0
+    }
+  }
+}
+```
+
+Filter out variants that appear only in ligation mix and score separately.
+```{r}
+# Subset out rows of variants only present in lig mix
+ligs_idx <- which(rowSums(all_vars_wd[ , 5:17]) == 0)
+ligs_idx <- c(1, ligs_idx) # add first row (wt)
+ligs_wd <- all_vars_wd[ligs_idx, ] %>% 
+  select(vars, starts_with("lig"), t35_rep1:t35_rep3, t70_rep1:t70_rep3)
+# change colname "lig_repX" to "t0_repX" 
+colnames(ligs_wd)[2:4] <- c("t0_rep1","t0_rep2","t0_rep3")
+# Gather counts into a long form, create additional columns for scoring
+ligs <- gather(ligs_wd, t0_rep1:t70_rep3, key = "sample", value = "count")
+for (i in 1:nrow(ligs)){
+  ligs$time[i] <- as.numeric(sub("t","",unlist(str_split(ligs$sample[i], "_r"))[1]))
+  ligs$rep[i] <- unlist(str_split(ligs$sample[i], "_"))[2]
+}
+
+# Score
+# Following function will generate a list of 3 dataframes: scores, se, p-values.
+source("../scripts/fn_calc_score.R")
+ligs_scores <- calc_score(ligs, c(0, 35, 70), 3)
+
+vars <- ligs_scores$scores$vars # get a vector of var names
+ligs_combined_scores <- as.data.frame(matrix(data = NA, nrow = length(vars), ncol = 4))
+colnames(ligs_combined_scores) <- c("vars","betaML","var_betaML","eps")
+ligs_combined_scores$vars <- vars
+
+# Following function will combine replicate scores and output a list of:
+# combined score, variance, and eps
+source("../scripts/fn_calc_rmle.R")
+# Run this function row by row (vars):
+for (j in 2:length(vars)){ # skip wt
+  y <- as.numeric(ligs_scores$scores[j,-1]) # y is a num vector of replicate scores (slope) 
+  sigma2i <- (as.numeric(ligs_scores$se[j,-1]))^2 # square of SE
+  outlist <- calc_rmle(y, sigma2i, 50) # iteration = 50 in the paper but try smaller number and check eps
+  ligs_combined_scores$betaML[j] <- outlist$betaML
+  ligs_combined_scores$var_betaML[j] <- outlist$var_betaML
+  ligs_combined_scores$eps[j] <- outlist$eps
+}
+```
+
+
+
+## Comparing with SDM viability data
+
+Correlation with viability data
+```{r}
+# Extract necessasry SDM viability columns and rename
+viability <- select(viability, mutation, obs)
+colnames(viability) <- c("vars","obs")
+# Combine two score dfs (one previously done, one that are from lig mix as t0)
+scores <- bind_rows(combined_scores[ , 1:3], ligs_combined_scores[ , 1:3]) 
+# Join with viability data
+joined <- inner_join(viability, scores, by = "vars")
+# Regress binary viability on fitness score
+fit <- glm(obs~betaML, data = joined, family = binomial)
+```
+Plot
+```{r}
+x <- seq(-.2, 0.11, 0.01)
+y <- predict(fit, list(betaML = x), type = "response")
+plot(joined$obs~joined$betaML, pch = 20, main = "Fitness score vs Viability",
+     xlab = "Score (beta MLE, Enrich2 algorithm)", ylab = "Viability")
+lines(x, y, col = "blue")
+```
+Try weighted regression
+```{r}
+# add weight column (1/var)
+joined$weight <- 1/joined$var_betaML
+fit_weighted <- glm(obs~betaML, data = joined, weights = weight, family = binomial)
+```
+Plot
+```{r}
+x <- seq(-.2, 0.11, 0.01)
+y <- predict(fit_weighted, list(betaML = x), type = "response")
+plot(joined$obs~joined$betaML, pch = 20, main = "Fitness score (weighted) vs Viability",
+     xlab = "Score (beta MLE, Enrich2 algorithm)", ylab = "Viability")
+lines(x, y, col = "blue")
+```
+
+```{r}
+ggplot(joined[-19,], aes(x = betaML, y = obs, size = weight)) +
+  geom_point()
+```
+
+Without ligs-only variants, but do weighted regression
+```{r}
+# Join with viability data
+joined2 <- inner_join(viability, combined_scores[ , 1:3], by = "vars")
+# Regress binary viability on fitness score
+fit2 <- glm(obs~betaML, data = joined, family = binomial)
+# plot
+x <- seq(-.2, 0.11, 0.01)
+y <- predict(fit2, list(betaML = x), type = "response")
+plot(joined2$obs~joined2$betaML, pch = 20, main = "Fitness score vs Viability",
+     xlab = "Score (beta MLE, Enrich2 algorithm)", ylab = "Viability")
+lines(x, y, col = "blue")
+```
+Weighted:
+```{r}
+joined2$weight <- 1/joined2$var_betaML
+fit2_weighted <- glm(obs~betaML, data = joined2, weights = weight, family = binomial)
+x <- seq(-.2, 0.11, 0.01)
+y <- predict(fit2_weighted, list(betaML = x), type = "response")
+plot(joined2$obs~joined2$betaML, pch = 20, main = "Fitness score (weighted) vs Viability",
+     xlab = "Score (beta MLE, Enrich2 algorithm)", ylab = "Viability")
+lines(x, y, col = "blue")
+```
+
+
+
+## Distribution of Fitness Effects
+
+Histogram of fitness for whole data (minus lig-only variants)
+```{r}
+# Create a column to indicate variant types (single, double, etc)
+for (i in 1:nrow(combined_scores)){
+  nmut_i <- length(unlist(str_split(combined_scores$vars[i], ",")))
+  if (nmut_i == 1){
+    combined_scores$type[i] <- "single"
+  } else if (nmut_i == 2){
+    combined_scores$type[i] <- "double"
+  } else {
+    combined_scores$type[i] <- "more"
+  }
+}
+
+# histogram of betaML grouped by type
+ggplot(combined_scores, aes(x = betaML)) + 
+  geom_histogram() +
+  facet_wrap(~type)
+```
+
+Histogram of fitness for variants that have SDM viability data
+```{r}
+joined2$obs <- as.factor(joined2$obs)
+ggplot(joined2, aes(x = betaML, fill = obs)) +
+  geom_histogram() +
+  scale_fill_manual(values=c("black", "blue"))
+```
+
+What causes the bimodal shape, especially the large counts near ~ -0.10? Check if majority of the left peak is due to lethal variants.
+```{r}
+var_counts <- select(all_vars_wd, vars, t0:t35_rep3, t70_rep1:t70_rep3)
+var_counts <- var_counts[-ligs_idx, ] # remove lig-only vars (ligs_idx includes wt too)
+# Get lethals (vars present only in t0)
+lethals_idx <- which(rowSums(var_counts[, 3:8]) == 0)
+lethal_vars <- var_counts[lethals_idx, "vars"] # a vector of var names that are lethal
+# Get 3rd quartile of SE
+lg_se <- summary(combined_scores$se_betaML)["3rd Qu."]
+# Create a new "attributes" column to indicate misc info such as lethals, large SE, etc
+var_scores <- combined_scores[-1,] # Get rid of the wt row and rename the df
+for (i in 1:nrow(var_scores)){
+  if (var_scores$vars[i] %in% lethal_vars){
+    var_scores$attr[i] <- "lethal"
+  } else if (var_scores$se_betaML[i] > lg_se){
+    var_scores$attr[i] <- "large_se" # some lethals will fall in this category but lehtla attr more imp
+  } else {var_scores$attr[i] <- "none"}
+}
+
+ggplot(var_scores, aes(x = betaML, color = attr)) + 
+  geom_histogram() +
+  facet_wrap(~type)
+```
+
+
+## Distribution of Fitness Effects after Removing One-timers (including lethals)
+
+Add obs_sample column to indicate how many samples have non-zero read counts:
+```{r}
+for (i in 1:nrow(var_counts)){
+  j = 0
+  for (s in 2:8){ #check sample by sample and add to j whenever non-zero
+    if (var_counts[i, s] != 0){
+      j = j + 1
+    }
+  }
+  var_counts$obs_samples[i] <- j
+}
+# create the obs_samples column in the scores df as well
+var_scores$obs_samples <- var_counts$obs_samples
+```
+
+Plot histograms only with variants that occur in more than one sample:
+```{r}
+var_scores %>% filter(obs_samples > 1) %>%
+  ggplot(aes(x = betaML, color = attr)) +
+  geom_histogram() +
+  facet_wrap(~type)
+```
+Histogram of total (without faceting by type)
+```{r}
+var_scores %>% filter(obs_samples > 1) %>%
+  ggplot(aes(x = betaML, color = attr)) +
+  geom_histogram()
+```
+
+
+## More on One-timers 
+
+Label which sample the variants are observed (t0? t70_rep2?)
+```{r}
+samples <- names(var_counts)[2:8]
+for (i in 1:nrow(var_counts)){
+  if (var_counts$obs_samples[i] == 1) {
+    for (j in 1:length(samples)){
+      if (var_counts[i, samples[j]] != 0){
+        var_counts$obs_in[i] <- samples[j]
+      }
+    }
+  } else {
+    var_counts$obs_in[i] <- "mult"
+  }
+}
+# Copy this newly created column to var_score df as well
+var_scores$obs_in <- var_counts$obs_in
+table(var_counts$obs_in)
+```
+
+Score and SE distribution of these one-timers grouped by sample they occur
+```{r}
+ggplot(var_scores, aes(x=obs_in, y=betaML)) +
+  geom_boxplot()
+ggplot(var_scores, aes(x=obs_in, y=se_betaML)) +
+  geom_boxplot()
+```
+
+
+
+## More on SDM Viability Data 
+
+Categories to label SDM data:
+  - lig (only observed in ligation mix)
+  - lethal (only observed in t0)
+  - deleterious
+  - neutral
+  - beneficial
+  
+How to determine deleterious to beneficial scores? - quartiles?
+```{r}
+var_scores %>% filter(attr != "lethal") %>%
+  summary(var_scores)
+```
+=> -0.012 < "neutral" < 0.0053
+
+
+```{r}
+# a vector of variant names for lig-only
+lig <- ligs_wd[-1,]$vars
+# lethal variants are already done: lethal_vars
+
+# Create a new column to categorize each var in joined df
+for (i in 1:nrow(joined)){
+  if (joined$vars[i] %in% lig){
+    joined$category[i] <- "lig"
+  } else if (joined$vars[i] %in% lethal_vars){
+    joined$category[i] <- "lethal"
+  } else if (joined$betaML[i] < -0.012){
+    joined$category[i] <- "deleterious"
+  } else if (joined$betaML[i] > 0.0053){
+    joined$category[i] <- "beneficial"
+  } else {
+    joined$category[i] <- "neutral"
+  }
+}
+```
+
+Get counts of variants for each category:
+For inviables:
+```{r}
+table(filter(joined, obs == 0)$category)
+```
+For viables:
+```{r}
+table(filter(joined, obs == 1)$category)
+```
+
+
+## Comparing with Zoe's data ("mix" samples)
+
+Read in csv and score:
+```{r}
+zoe_df2 <- read.csv("../data/dada2result_zoe2.csv", stringsAsFactors = F)[,-1]
+zoe_df2$AAsub[is.na(zoe_df2$AAsub)] <- "wt"
+# make wide-form df to get counts by samples as columns
+vars_z <- unique(zoe_df2$AAsub)
+zoe_vars_wd <- as.data.frame(vars_z)
+samples <- unique(zoe_df2$sample)
+for (i in 1:length(samples)){
+  df_i <- filter(zoe_df2, sample == samples[i])
+  for (j in 1:length(vars_z)){
+    if (vars_z[j] %in% df_i$AAsub){
+      zoe_vars_wd[j, samples[i]] <- df_i[df_i$AAsub==vars_z[j],]$count
+    } else {
+      zoe_vars_wd[j, samples[i]] <- 0
+    }
+  }
+}
+
+# select "mix" samples only
+mix_wd <- select(zoe_vars_wd, vars_z, starts_with("mix"))
+# filter out variants with zero counts in all time points in this subsetted dataframe
+mix_wd <- mix_wd[rowSums(mix_wd[,-1]) != 0, ]
+
+
+# Convert to a long form
+zoe_vars <- gather(mix_wd, mix_t0_9_27:mix_t70_9_27, key = "sample", value = "count")
+# Add additional columns needed for scoring
+for (i in 1:nrow(zoe_vars)){
+  zoe_vars$time[i] <- as.numeric(sub("t","",unlist(str_split(zoe_vars$sample[i],"_"))[2]))
+  zoe_vars$date[i] <- unlist(str_split(zoe_vars$sample[i], "_"))[4]
+}
+# fix rep column
+zoe_vars <- mutate(zoe_vars, 
+                   rep = case_when(date == "27" ~ "rep1",
+                                   date == "12" ~ "rep2",
+                                   date == "24" ~ "rep3",
+                                   date == "04" ~ "rep4"))
+# Score
+source("../scripts/fn_calc_score.R")
+zoe_scores <- calc_score(zoe_vars, c(0, 30, 50, 70), 4)
+vars <- zoe_scores$scores$vars
+zoe_comb_scores <- as.data.frame(matrix(data = NA, nrow = length(vars), ncol = 4))
+colnames(zoe_comb_scores) <- c("vars", "betaML","var_betaML","eps")
+zoe_comb_scores$vars <- vars
+source("../scripts/fn_calc_rmle.R")
+for (j in 2:length(vars)){
+  y <- as.numeric(zoe_scores$scores[j,-1])
+  sigma2i <- (as.numeric(zoe_scores$se[j,-1]))^2
+  outlist <- calc_rmle(y, sigma2i, 50)
+  zoe_comb_scores$betaML[j] <- outlist$betaML
+  zoe_comb_scores$var_betaML[j] <- outlist$var_betaML
+  zoe_comb_scores$eps[j] <- outlist$eps
+}
+```
+
+
+Get scored variants into a new df for further inspection
+```{r}
+zvar_scores <- zoe_comb_scores[-1, 1:3] # just get vars, beta, variance columns
+zvar_scores$se <- sqrt(zvar_scores$var_betaML)
+# Create a column to indicate variant types (single, double, etc)
+for (i in 1:nrow(zvar_scores)){
+  nmut_i <- length(unlist(str_split(zvar_scores$vars[i], ",")))
+  if (nmut_i == 1){
+    zvar_scores$type[i] <- "single"
+  } else if (nmut_i == 2){
+    zvar_scores$type[i] <- "double"
+  } else {
+    zvar_scores$type[i] <- "more"
+  }
+}
+# Get analogous counts df to use in conjunction
+zvar_counts <- mix_wd[-1,] # mix_wd is the counts df with zero variants filtered out. Just remove wt row.
+
+# histogram of betaML grouped by type
+ggplot(zvar_scores, aes(x = betaML)) + 
+  geom_histogram() +
+  facet_wrap(~type)
+```
+
+
+Put in other information for analysis
+```{r}
+# lethals?
+# Get lethals (vars present only in t0)
+lethals_idx_z <- which(rowSums(zvar_counts[, 3:14]) == 0)
+lethal_vars_z <- zvar_counts[lethals_idx_z, "vars_z"] # a vector of var names that are lethal
+# Get 3rd quartile of SE
+lg_se <- summary(zvar_scores$se)["3rd Qu."]
+# Create a new "attributes" column to indicate misc info such as lethals, large SE, etc
+for (i in 1:nrow(zvar_scores)){
+  if (zvar_scores$vars[i] %in% lethal_vars_z){
+    zvar_scores$attr[i] <- "lethal"
+  } else if (zvar_scores$se[i] > lg_se){
+    zvar_scores$attr[i] <- "large_se" # some lethals will fall in this category but lehtla attr more imp
+  } else {zvar_scores$attr[i] <- "none"}
+}
+# histograms
+ggplot(zvar_scores, aes(x = betaML, color = attr)) + 
+  geom_histogram() +
+  facet_wrap(~type)
+```
+
+Find variants present both mine and Zoe's and compare their fitness score
+```{r}
+# A vector of common variant names
+yz <- intersect(var_scores$vars, zvar_scores$vars)
+# Subset out respective df
+yz_y <- var_scores[var_scores$vars %in% yz,] %>% arrange(vars)
+yz_z <- zvar_scores[zvar_scores$vars %in% yz,] %>% arrange(vars)
+common <- data.frame(vars=yz_y$vars, yesol=yz_y$betaML, mix=yz_z$betaML)
+ggplot(data = common, aes(x=yesol, y=mix)) +
+  geom_point() +
+  geom_smooth(method=lm, se=FALSE) +
+  annotate(geom="text", label="r=0.22", color="red", x=0.06, y=-0.06)
+```
+
+Try using variants with clearly high/low scores
+```{r}
+# Mix samples quartiles
+summary(zvar_scores$betaML)
+```
+Mix samples cutoffs:
+  -"high" score: > 0.0048
+  -"low" scores: < -0.011
+
+```{r}
+mix_filtered <- filter(zvar_scores, betaML > 0.0048 | betaML < -0.011)
+yesol_filtered <- filter(var_scores, betaML > 0.0053 | betaML < -0.012)
+yz2 <- intersect(mix_filtered$vars, yesol_filtered$vars)
+yz2_y <- yesol_filtered[yesol_filtered$vars %in% yz2,] %>% arrange(vars)
+yz2_z <- mix_filtered[mix_filtered$vars %in% yz2,] %>% arrange(vars)
+common_filt <- data.frame(vars=yz2_y$vars, yesol=yz2_y$betaML, mix=yz2_z$betaML)
+ggplot(data = common_filt, aes(x=yesol, y=mix)) +
+  geom_point() +
+  geom_smooth(method=lm, se=FALSE) +
+  annotate(geom="text", label="r=0.4", color="red", x=0.06, y=-0.06)
+```
+
+
+Check correlations between replicates
+```{r}
+# Need the intermediate df -- run scoring chunks from post_dada2_analysis.Rmd first
+var_counts_filt <- filter(var_counts, obs_samples == 7)
+vars_filt <- var_counts_filt$vars
+var_repscores_filt <- yesol_scores$scores[yesol_scores$scores$vars %in% vars_filt,] #Need the score list
+# correlation test
+cor(var_repscores_filt[,2:4])
+```
+
+```{r}
+plot(var_repscores_filt[,2:4])
+```
+
+Try the same with Zoe's mix samples
+```{r}
+for (i in 1:nrow(zvar_counts)){
+  j = 0
+  for (s in 2:14){ 
+    if (zvar_counts[i, s] != 0){
+      j = j + 1
+    }
+  }
+  zvar_counts$obs_samples[i] <- j
+}
+zvar_counts_filt <- filter(zvar_counts,obs_samples >= 5)
+zvars_filt <- zvar_counts_filt$vars_z
+zvar_repscores_filt <- zoe_scores$scores[zoe_scores$scores$vars %in% zvars_filt,]
+
+cor(zvar_repscores_filt[,2:5])
+```
+```{r}
+plot(zvar_repscores_filt[,2:5])
+```
+
+
+How consistent are our counts??
+```{r}
+repscores <- zoe_scores$scores %>% gather(rep1:rep4, key = "reps", value = "score")
+se <- zoe_scores$se %>% gather(rep1:rep4, key = "reps", value = "se")
+ggplot(data = se, aes(x=se)) +
+  geom_histogram() +
+  geom_freqpoly(data = repscores, aes(x=score), color = "blue") +
+  facet_wrap(~reps)
+```
+```{r}
+repscores2 <- yesol_scores$scores %>% gather(rep1:rep3, key = "reps", value = "score")
+se2 <- yesol_scores$se %>% gather(rep1:rep3, key = "reps", value = "se")
+ggplot(data = se2, aes(x=se)) +
+  geom_histogram() +
+  geom_freqpoly(data = repscores2, aes(x=score), color = "blue") +
+  facet_wrap(~reps)
+```
+
+## Comparing with fitness score
+
+Some G mutants have fitness scores from liquid growth assay by Lu. Plot fitness against beta to see if Enrich2 scoring agrees with traditional fitness assay.
+
+```{r}
+fitness <- read.csv("../data/Gmut_fitness_Lu.csv")
+muts <- fitness$mutant[-7] # make a vector of mutants except wt
+combined_scores %>% filter(vars == "G118I")
+```
+=> none found.
+
+
+

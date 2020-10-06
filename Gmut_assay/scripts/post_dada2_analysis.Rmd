@@ -1,0 +1,511 @@
+---
+title: "post_dada2_analysis"
+author: "Yesol Sapozhnikov"
+date: "6/21/2020"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(Biostrings)
+
+# Read in csvs
+yesol_df <- read.csv("../data/dada2result_yesol.csv", stringsAsFactors = F)[,-1]# First col in csv is just index numbers.
+yesol_df2 <- read.csv("../data/dada2result_yesol2.csv", stringsAsFactors = F)[,-1]
+zoe_df <- read.csv("../data/dada2result_zoe.csv", stringsAsFactors = F)[,-1]
+zoe_df2 <- read.csv("../data/dada2result_zoe2.csv", stringsAsFactors = F)[,-1]
+
+# Assign values to NAs:
+yesol_df2$AAsub[is.na(yesol_df2$AAsub)] <- "wt"
+zoe_df2$AAsub[is.na(zoe_df2$AAsub)] <- "wt"
+
+yesol_df2$nmut_offtarget[is.na(yesol_df2$nmut_offtarget)] <- 0
+zoe_df2$nmut_offtarget[is.na(zoe_df2$nmut_offtarget)] <- 0
+```
+
+### Overview ###
+
+Off-target mutations summary
+```{r}
+group_by(yesol_df2, sample) %>%
+  summarize("total_vars" = n(),
+            "contains_offtarget" = sum(as.logical(nmut_offtarget)),
+            "percentage" = 100*contains_offtarget/total_vars)
+```
+```{r}
+# Zoe's samples
+group_by(zoe_df2, sample) %>%
+  summarize("total_vars" = n(),
+            "contains_offtarget" = sum(as.logical(nmut_offtarget)),
+            "percentage" = 100*contains_offtarget/total_vars)
+```
+
+```{r}
+# what sites are off-target mutations occurring?
+yesol_df %>% 
+  filter(in_target == 0) %>%
+  ggplot(aes(x = site)) + geom_bar()
+zoe_df %>%
+  filter(in_target == 0) %>%
+  ggplot(aes(x = site)) + geom_bar()
+```
+
+Visualize read counts and numbers of variants over time
+```{r}
+counts_y <- select(yesol_df2, sample, AAsub, count, nmut_tot)
+counts_y$timepoint <- sapply(counts_y$sample, function(x) str_split(x, "_r")[[1]][1])
+counts_y$type <- NA
+counts_y[counts_y$nmut_tot == 0,]$type <- "wt"
+counts_y[counts_y$nmut_tot == 1,]$type <- "single"
+counts_y[counts_y$nmut_tot == 2,]$type <- "double"
+counts_y[counts_y$nmut_tot > 2,]$type <- "more"
+by_time <- counts_y %>%
+  group_by(sample, type) %>%
+  summarize(
+    n = n(),
+    counts = sum(count)
+  )
+by_time$timepoint <- sapply(by_time$sample, function(x) str_split(x, "_r")[[1]][1])
+ggplot(by_time, aes(x = timepoint, y = counts, color = type)) +
+  geom_point() +
+  scale_color_brewer(palette = "Dark2") +
+  labs(title = "Read counts in each sample")
+ggplot(by_time, aes(x = timepoint, y = n, color = type)) +
+  geom_point() +
+  scale_color_brewer(palette = "Dark2") +
+  labs(title="Number of variants in each sample")
+
+```
+
+
+```{r}
+# Zoe's samples
+counts_z <- select(zoe_df2, sample, AAsub, count, nmut_tot)
+counts_z$type <- NA
+counts_z[counts_z$nmut_tot == 0,]$type <- "wt"
+counts_z[counts_z$nmut_tot == 1,]$type <- "single"
+counts_z[counts_z$nmut_tot == 2,]$type <- "double"
+counts_z[counts_z$nmut_tot > 2,]$type <- "more"
+by_time_z <- counts_z %>%
+  group_by(sample, type) %>%
+  summarize(
+    n = n(),
+    counts = sum(count)
+  )
+by_time_z$frag <- sapply(by_time_z$sample, function(x) str_split(x,"_",simplify=T)[1])
+by_time_z$timepoint <- sapply(by_time_z$sample, function(x) str_split(x,"_",simplify=T)[2])
+ggplot(by_time_z, aes(x = timepoint, y = counts, color = type)) +
+  geom_point() +
+  scale_color_brewer(palette = "Dark2") +
+  facet_wrap(~frag) +
+  labs(title = "Read counts in each sample")
+ggplot(by_time_z, aes(x = timepoint, y = n, color = type)) +
+  geom_point() +
+  scale_color_brewer(palette = "Dark2") +
+  facet_wrap(~frag) +
+  labs(title="Number of variants in each sample")
+```
+
+
+
+
+### Scoring Variants' Fitness ###
+
+Create a new dataframe of each variant's counts over time points 
+```{r}
+vars <- unique(yesol_df2$AAsub)
+yesol_vars_wd <- as.data.frame(vars)
+samples <- unique(yesol_df2$sample)
+for (i in 1:length(samples)){
+  df_i <- filter(yesol_df2, sample == samples[i])
+  for (j in 1:length(vars)){
+    if (vars[j] %in% df_i$AAsub){
+      yesol_vars_wd[j, samples[i]] <- df_i[df_i$AAsub==vars[j],]$count
+    } else {
+      yesol_vars_wd[j, samples[i]] <- 0
+    }
+  }
+}
+# Zoe's
+vars_z <- unique(zoe_df2$AAsub)
+zoe_vars_wd <- as.data.frame(vars_z)
+samples <- unique(zoe_df2$sample)
+for (i in 1:length(samples)){
+  df_i <- filter(zoe_df2, sample == samples[i])
+  for (j in 1:length(vars_z)){
+    if (vars_z[j] %in% df_i$AAsub){
+      zoe_vars_wd[j, samples[i]] <- df_i[df_i$AAsub==vars_z[j],]$count
+    } else {
+      zoe_vars_wd[j, samples[i]] <- 0
+    }
+  }
+}
+```
+
+Filter out variants that only appear in ligation mix and all zeroes in the rest:
+```{r}
+# Variants that are only in ligation mix
+zeroes <- yesol_vars_wd[rowSums(yesol_vars_wd[ ,5:17]) == 0, "vars"]
+# Those variants and their counts in ligation mix
+zeroes_df <- yesol_vars_wd %>%
+  select(vars, starts_with("lig")) %>%
+  filter(vars %in% zeroes)
+# Variants df without those zero variants:
+yesol_vars_wd <- yesol_vars_wd %>% 
+  filter(!vars %in% zeroes)
+```
+
+```{r}
+# Turn yesol_vars into a long form, add columns to indicate time and rep.
+# For t70 samples, use undiluted sample for now
+yesol_vars <- select(yesol_vars_wd, vars, t0:t35_rep3, t70_rep1:t70_rep3) %>%
+  gather(t0:t70_rep3, key = "sample", value = "count")
+for (i in 1:nrow(yesol_vars)){
+  yesol_vars$time[i] <- as.numeric(sub("t","",unlist(str_split(yesol_vars$sample[i], "_r"))[1]))
+  splits <- unlist(str_split(yesol_vars$sample[i], "_"))
+  yesol_vars$rep[i] <- splits[length(splits)]
+}
+yesol_vars[yesol_vars$time==0,]$rep <- "all"
+
+```
+
+
+To score variants, use method described in:
+Rubin et al. Genome Biology (2017) 18:150 DOI 10.1186/s13059-017-1272-5
+
+For each variants,
+  Mvt = log((Cvt + 1/2)/(Cwtt + 1/2))
+  Get Mvt for t=35, t=70, then regress on t.
+  Score is the slope of the regression line. 
+
+Replicate scores are then combined by calculating "restricted maximum likelihood estimates" per paper.
+
+```{r}
+# Following function will generate a list of 3 dataframes: scores, se, p-values.
+source("../scripts/fn_calc_score.R")
+yesol_scores <-calc_score(yesol_vars, c(0, 35, 70), 3)
+
+vars <- yesol_scores$scores$vars # get a vector of var names
+combined_scores <- as.data.frame(matrix(data = NA, nrow = length(vars), ncol = 4))
+colnames(combined_scores) <- c("vars","betaML","var_betaML","eps")
+combined_scores$vars <- vars
+
+# Following function will combine replicate scores and output a list of:
+# combined score, variance, and eps
+source("../scripts/fn_calc_rmle.R")
+# Run this function row by row (vars):
+for (j in 2:length(vars)){ # skip wt
+  y <- as.numeric(yesol_scores$scores[j,-1]) # y is a num vector of replicate scores (slope) 
+  sigma2i <- (as.numeric(yesol_scores$se[j,-1]))^2 # square of SE
+  outlist <- calc_rmle(y, sigma2i, 50) # iteration = 50 in the paper but try smaller number and check eps
+  combined_scores$betaML[j] <- outlist$betaML
+  combined_scores$var_betaML[j] <- outlist$var_betaML
+  combined_scores$eps[j] <- outlist$eps
+}
+```
+
+
+Visualize
+```{r}
+# modify df for plotting
+df <- combined_scores[-1,]
+df$site <- as.numeric(gsub("\\D","", df$vars))
+df$AAfrom <- sapply(df$vars, function (x) str_split(gsub("\\d","",x),"", simplify = T)[1])
+df$AAto <- sapply(df$vars, function (x) str_split(gsub("\\d","",x),"", simplify = T)[2])
+# consider only singles
+df <- filter(df, nchar(vars) <= 5)
+
+ggplot(df, aes(x = AAto, y = site, fill = betaML)) + 
+  scale_y_continuous(breaks = seq(1:175)) +
+  scale_fill_gradient2(low = "royalblue", mid = "white", high = "red2") +
+  geom_point(aes(size = var_betaML), shape = 21) +
+  geom_point(aes(x = AAfrom, y = site), shape = 4, size = .5)
+ggsave("../figures/combined_scores_singles.pdf", width = 5, height = 20)
+
+
+```
+
+
+
+
+Investigate overlap of variants between mine and Zoe's 
+Yesol's samples: combined G1 singles and G2 singles
+Zoe's samples, G1: G1 doubles
+               G2: G2 doubles
+               mix: mix of G1 and G2 singles (same library as mine)
+```{r}
+library(VennDiagram)
+# All variants (singles, doubles, etc)
+yesolG1G2 <- yesol_vars_wd$vars
+zoeG1 <- zoe_vars_wd %>% # subset out G1 only
+  select(vars_z, starts_with("G1"))
+# Filter out variants that are all zeros in G1 samples
+zoeG1 <- zoeG1[rowSums(zoeG1[ ,-1]) != 0, "vars_z"]
+# Repeat for "G2" and "mix"
+zoeG2 <- zoe_vars_wd %>% select(vars_z, starts_with("G2"))
+zoeG2 <- zoeG2[rowSums(zoeG2[ ,-1]) != 0, "vars_z"]
+zoeMix <- zoe_vars_wd %>% select(vars_z, starts_with("mix"))
+zoeMix <- zoeMix[rowSums(zoeMix[, -1]) != 0, "vars_z"]
+
+venn.diagram(x = list(yesolG1G2, zoeG1, zoeG2, zoeMix),
+             category.names = c("yesol", "zoeG1", "zoeG2", "zoeMIX"),
+             filename = "../figures/vars_overlap.png")
+
+# Try with singles only
+yesolG1G2 <- yesol_vars_wd %>% filter(nchar(vars) <= 5)
+yesolG1G2 <- yesolG1G2$vars
+
+zoeG1 <- zoe_vars_wd %>% filter(nchar(vars_z) <= 5) %>% select(vars_z, starts_with("G1"))
+zoeG1 <- zoeG1[rowSums(zoeG1[ ,-1]) != 0, "vars_z"]
+
+zoeG2 <- zoe_vars_wd %>% filter(nchar(vars_z) <= 5) %>% select(vars_z, starts_with("G2"))
+zoeG2 <- zoeG2[rowSums(zoeG2[ ,-1]) != 0, "vars_z"]
+
+zoeMix <- zoe_vars_wd %>% filter(nchar(vars_z) <= 5) %>% select(vars_z, starts_with("mix"))
+zoeMix <- zoeMix[rowSums(zoeMix[ ,-1]) != 0, "vars_z"]
+
+venn.diagram(x = list(yesolG1G2, zoeG1, zoeG2, zoeMix),
+             category.names = c("yesol", "zoeG1", "zoeG2", "zoeMIX"),
+             filename = "../figures/vars_overlap_singles.png")
+
+```
+
+
+
+
+
+
+
+
+* Save dataframes (removed lig-only present variants)
+```{r}
+write_csv(combined_scores, "../data/combined_var_scores_yesol.csv")
+write_csv(yesol_vars_wd, "../data/vars_counts_per_samples.csv")
+```
+
+
+
+
+
+
+
+### Distribution of low counts ###
+
+Quick glance at variants that contain <10 counts in any sample:
+```{r}
+# Use long form -> filter out entries with counts <10
+lows <- yesol_vars %>%
+  filter(between(count, 1, 9))
+# Get a vector of the low count vars
+low_vars <- unique(lows$vars)
+# Extract these variants from wide form df
+low_vars_df <- yesol_vars_wd %>%
+  filter(vars %in% low_vars)
+```
+
+
+How to handle 3 different sets of t70 samples? -- consider t70_repX for now.
+As for variants only observed in lig samples, leave them out for now (filtered out already from previous chunks.)
+
+```{r}
+# "yesol_vars_wd" already removed variants only present in ligation mix. 
+# Just select needed columns from there.
+counts <- select(yesol_vars_wd, vars, t0:t35_rep3, t70_rep1:t70_rep3)
+
+# Remove "lethal" variants (only present in t0 sample)
+# Subset out count df to calculate rowsum for non-t0 time points
+nont0_sums <- as.data.frame(counts[,c(1, 3:8)])
+# Get index of "lethal" variants (non-t0 rowsum is zero)
+lethals_idx <- which(rowSums(nont0_sums[, -1]) == 0)
+# Subset out lethal variants' counts and score data
+lethals_ct <- counts[lethals_idx,]
+# Subset out the rest
+counts <- counts[-lethals_idx,]
+```
+
+New variables needed to study distribution: 
+  - nmut (for easy separation of singles, doubles, etc)
+  - number of non-zero counts in 7 samples
+  - mean and variance of the counts across samples
+```{r}
+# Get number of mutations
+counts$nmut <- sapply(counts$vars, function(x) length(unlist(str_split(x, ","))))
+# Number of non-zero counts across samples
+for (i in 1:nrow(counts)){
+  if (counts$nmut[i] == 1){
+    counts$type[i] <- "single"
+  } else if (counts$nmut[i] == 2){
+    counts$type[i] <- "double"
+  } else if (counts$nmut[i] > 2){
+    counts$type[i] <- "more"
+  }
+  j = 0
+  for (s in 2:8){ #check sample by sample and add to j whenever non-zero
+    if (counts[i, s] != 0){
+      j = j + 1
+    }
+  }
+  counts$obs_samples[i] <- j
+}
+counts$sum <- rowSums(counts[,2:8])
+counts$mean <- round(rowMeans(counts[,2:8]), digits = 0)
+counts$sd <- round(apply(counts[,2:8], 1, sd), digits = 1)
+# Remove wt
+counts <- counts[-1,]
+```
+
+Plot
+```{r}
+counts %>% filter(type == "single") %>%
+  ggplot(aes(x = sum, y = sd, color = obs_samples)) +
+  geom_point()
+counts %>% filter(type == "single") %>%
+  ggplot(aes(x = sum, y = sd, color = obs_samples)) +
+  geom_point() +
+  coord_cartesian(xlim = c(0,1000), ylim= c(0, 200))
+```
+
+```{r}
+counts %>% filter(between(sum, 250, 375), sd >100)
+counts %>% filter(sum < 500, sd > 150)
+```
+=> straight line is caused by variants with counts only in t70_rep2
+
+Zoom in more:
+```{r}
+counts %>% filter(type == "single") %>%
+  ggplot(aes(x = sum, y = sd, color = obs_samples)) +
+  geom_point() +
+  coord_cartesian(xlim = c(0,100), ylim= c(0, 50))
+```
+
+Try histogram
+```{r}
+counts %>% filter(type == "single", sum < 500) %>%
+  ggplot(aes(x = sum)) +
+  geom_histogram(binwidth = 20) +
+  facet_wrap(~obs_samples)
+#ggsave("../figures/low_ct_dist_singles.pdf")
+counts %>% filter(type == "single", sum < 100) %>%
+  ggplot(aes(x = sum)) +
+  geom_histogram(binwidth = 10) +
+  facet_wrap(~obs_samples)
+```
+=> For singles, most variants with low counts (sum < 100) occur only in 1 or 2 samples out of 7. 
+What are the exact counts?
+```{r}
+counts %>% filter(type == "single") %>% count()
+counts %>% filter(type == "single", obs_samples == 2) %>% count()
+counts %>% filter(type == "single", obs_samples == 2, sum < 20) %>% count()
+```
+
+Singles:
+Total non-wt variants: 571 (removed lethal variants)
+76 only occur in 1 out of 7 samples (7 are fewer than 10 reads)
+47 occur in 2 out of 7 samples (none fewer than 20 reads)
+
+
+Doubles:
+Total non-wt variants: 552
+144 only occur in 1 out of 7 samples, with 81 fewer than 10 reads.
+
+
+```{r}
+counts %>% filter(mean < 100) %>%
+  ggplot(aes(x = mean)) +
+  geom_histogram(binwidth = 5) +
+  facet_grid(type~obs_samples)
+#ggsave("../figures/low_ct_dist_all.pdf")
+```
+
+Histograms with Zoe's data (consider only "mix" samples since that's the one analogous to mine)
+```{r}
+# Get "mix" samples only
+counts_z <- select(zoe_vars_wd, vars_z, mix_t0_9_27:mix_t70_9_27)
+# Remove variants with all zeroes in this selection
+zeroes_idx <- which(rowSums(counts_z[, -1]) == 0)
+# Subset out those that are not entirely zero
+counts_z <- counts_z[-zeroes_idx,]
+# Get number of mutations
+counts_z$nmut <- sapply(counts_z$vars, function(x) length(unlist(str_split(x, ","))))
+# Number of non-zero counts across samples
+for (i in 1:nrow(counts_z)){
+  if (counts_z$nmut[i] == 1){
+    counts_z$type[i] <- "single"
+  } else if (counts_z$nmut[i] == 2){
+    counts_z$type[i] <- "double"
+  } else if (counts_z$nmut[i] > 2){
+    counts_z$type[i] <- "more"
+  }
+  j = 0
+  for (s in 2:14){ #check sample by sample and add to j whenever non-zero
+    if (counts_z[i, s] != 0){
+      j = j + 1
+    }
+  }
+  counts_z$obs_samples[i] <- j
+}
+counts_z$sum <- rowSums(counts_z[,2:14])
+counts_z$mean <- round(rowMeans(counts_z[,2:14]), digits = 0)
+counts_z$sd <- round(apply(counts_z[,2:14], 1, sd), digits = 1)
+# Remove wt
+counts_z <- counts_z[-1,]
+```
+
+Overview plot
+```{r}
+counts_z %>% filter(type == "single") %>%
+  ggplot(aes(x = sum, y = sd, color = obs_samples)) +
+  geom_point()
+```
+
+```{r}
+counts_z %>% filter(sum < 200) %>%
+  ggplot(aes(x = sum)) +
+  geom_histogram(binwidth = 10) +
+  facet_grid(type~obs_samples)
+```
+
+
+
+What are the read counts of variants that only occur in one sample (except "lethals")
+```{r}
+filter(counts, obs_samples == 1) %>%
+  ggplot(aes(x = type, y = sum)) + geom_boxplot()
+```
+
+
+
+
+
+Checking on SE:
+
+```{r}
+# A quick look at SE of replicate scores and SE from RMLE algorithm
+# With environment after running post_data2_analysis.Rmd (just need dataframes after running the custom functions)
+
+reps_se1 <- yesol_scores$se$rep1[-1] # remove first row (wt)
+reps_se2 <- yesol_scores$se$rep2[-1]
+reps_se3 <- yesol_scores$se$rep3[-1]
+comb_se <- sqrt(combined_scores$var_betaML[-1])
+
+se_df <- data.frame(comb_se, reps_se1, reps_se2, reps_se3)
+
+# pairwise plots
+plot(se_df)
+
+# correlation coef
+cor(se_df)
+cor.test(comb_se, reps_se1)
+```
+
+
+
+
+Stop codon variants
+```{r}
+stops <- yesol_vars_wd %>% filter(str_detect(vars, "\\*"))
+```
+
+
+
