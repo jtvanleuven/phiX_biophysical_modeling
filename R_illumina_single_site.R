@@ -1,20 +1,8 @@
 library(stringr)
 library(Biostrings)
 library(xlsx)
-
-library(stringr)
-library(reshape2)
-library(ggplot2)
-library(cowplot)
-library(kableExtra)
-library(RColorBrewer)
-library(dada2)
 library(Rsamtools)
 library(Rmisc)
-library(doParallel)
-library(ggsci)
-library(ggplot2)
-registerDoParallel(cores=10)
 
 PHIX_GENETIC_CODE <- GENETIC_CODE
 attr(PHIX_GENETIC_CODE, "alt_init_codons") <- "ATG"
@@ -65,9 +53,6 @@ count.cods <- function(aln,s,e){
 }
 
 
-setwd("C:/Users/jt_laptop/Desktop/VMshare/tmp/split/")
-
-
 
 ##on linux for processing merged reads
 #java -jar /mnt/c/Users/jt_laptop/Downloads/keep/Trimmomatic-0.38/trimmomatic-0.3jar PE -threads 10 phix_41_43_106_R1.fastq phix_41_43_106_R2.fastq phix_41_43_106_F_paired.fq phix_41_43_106_F_unpaired.fq phix_41_43_106_R_paired.fq phix_41_43_106_R_unpaired.fq ILLUMINACLIP:MiSeqIBEST-PE.fa:2:20:10 LEADING:3 TRAILING:3 HEADCROP:5 SLIDINGWINDOW:4:15 MINLEN:50
@@ -89,13 +74,13 @@ setwd("C:/Users/jt_laptop/Desktop/VMshare/tmp/split/")
 # run_bwa.sh
 # run_samtools.sh
 
-ref <- readDNAStringSet("rawdata/G_wt.fa")
+ref <- readDNAStringSet("rawdata/G_wt.fasta")
 sam.tab <- read.xlsx("rawdata/SubmissionSheet_Amplicon_v3.0_042219_jtv.xls", sheetIndex = 1)
 sam.tab <- sam.tab[15:157,1:14]
 names(sam.tab) <- as.character(as.matrix(sam.tab[1,]))
 sam.tab <- sam.tab[-1,]
 
-fns <- sort(list.files("rawdata/reads/042219/", full.names = TRUE))
+fns <- sort(list.files("rawdata/illumina_reads/042219/", full.names = TRUE))
 fnFs <- fns[grepl("R1.fastq.gz", fns)]
 pileup <- fns[grepl("parse", fns)]
 sample.names <- sapply(strsplit(fnFs, ".fastq"), `[`, 1)
@@ -104,75 +89,64 @@ sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.name
 #g41 <- data.frame(sample.names[str_detect(sample.names, "g41_t")])
 tab <- data.frame(sample.names)
 names(tab) <- "id"
+tab$id <- str_replace(tab$id,"redo_","")
+tab$id <- str_replace(tab$id,"-","_")
+tab$id <- str_replace(tab$id,"_R1","")
 tab$time <- str_split(tab$id,"_",simplify = T)[,2]
 tab$rep <- str_split(tab$id,"_",simplify = T)[,3]
 tab$site <- str_split(tab$id,"_",simplify = T)[,1]
-tab$site <- str_replace(tab$site,"g","")
+tab$site <- str_extract(tab$site,"\\d+")
 tab$id <- str_replace(tab$id,"_R1","")
-tab[90,]$time <- "t0"
-tab[90,]$rep <- "rep1"
-tab[90,]$site <- "ntc"
-# #write.csv(tab,file="dms2_batchfile.txt")
-# #edit this file in excel now
-# 
-# mix <- tab[tab$site=="mix",]
-# sing <- tab[str_detect(tab$id, "t") & !tab$site=="mix",]
-# # sing$un <- NA
-# # sing$dos <- NA
-# # sing$tres <- NA
-# lig <- tab[str_detect(tab$id,"lig"),]
-# 
-# sing[,5:8] <- NA
+tab[which(str_detect(tab$id, "NTC")),]$time <- 90 
+tab[which(str_detect(tab$id, "NTC")),]$rep <- c(2,3,1)
+
 
 ##could not find a good tool to measure codon frequencies over time.
 #have to write myself
-
 #####try with bam files
 ###code works with single mix (not multiple sites mixed together)
 cod.tab <- data.frame(matrix(nrow=nrow(tab),ncol=64))
 names(cod.tab) <- names(PHIX_GENETIC_CODE)
-for(j in 1:nrow(tab)){
-  tab$id[j]
-  bam.sorted <- BamFile(paste("reads/split2/",tab$id[j],"_bwa.sorted.bam",sep=""))
-  #seqinfo(bam.sorted)
-  #names(bam.sorted)
-  #quickBamFlagSummary(bam.sorted)
-  aln <- scanBam(bam.sorted)
-  aln <- aln[[1]]
-  #names(aln)
-  #lapply(aln, function(xx) xx[1])
-  cigs <- table(aln$cigar)
-  cigs[cigs > length(aln$qname)*0.001]
-  
-  #filter alinged reads by
-  #1 mapq
-  #2 isize
-  res <- as.numeric(tab$site[j])
-  s <- res*3-2
-  e <- res*3
-  paste(substr(as.character(ref),s-10,s-1),substr(as.character(ref),s,e),substr(as.character(ref),e+1,e+10),sep=" ")
-  obs.tab <- count.cods(aln,s,e)
-  cod.tab[j,] <- as.numeric(obs.tab[names(PHIX_GENETIC_CODE)])
-  print(paste("done with ",tab$id[j],sep=""))
+slow <- F
+if(slow){
+  for(j in 1:nrow(tab)){
+    tab$id[j]
+    bam.sorted <- BamFile(paste("rawdata/illumina_reads/042219/",tab$id[j],"_bwa_mapped.sorted.bam",sep=""))
+    #seqinfo(bam.sorted)
+    #names(bam.sorted)
+    #quickBamFlagSummary(bam.sorted)
+    aln <- scanBam(bam.sorted)
+    aln <- aln[[1]]
+    #names(aln)
+    #lapply(aln, function(xx) xx[1])
+    cigs <- table(aln$cigar)
+    cigs[cigs > length(aln$qname)*0.001]
+    #filter alinged reads by
+    #1 mapq
+    #2 isize
+    res <- as.numeric(tab$site[j])
+    s <- res*3-2
+    e <- res*3
+    paste(substr(as.character(ref),s-10,s-1),substr(as.character(ref),s,e),substr(as.character(ref),e+1,e+10),sep=" ")
+    obs.tab <- count.cods(aln,s,e)
+    cod.tab[j,] <- as.numeric(obs.tab[names(PHIX_GENETIC_CODE)])
+    print(paste("done with ",tab$id[j],sep=""))
+  }
 }
+cod.tab$sample <- tab$id
+row.names(cod.tab) <- cod.tab$sample
+write.csv(cod.tab, "cod_tab.csv", quote = F)
+cod.tab <- read.csv("cod_tab.csv")
 
-##try multithreading
-{
-# obs.tab <- foreach(j = 1:nrow(tab), .combine = rbind, .packages=c('Biostrings','stringr','seqinr','Rsamtools')) %dopar% {
-#   tab$id[j]
-#   bam.sorted <- BamFile(paste("reads/split2/",tab$id[j],"_bwa.sorted.bam",sep=""))
-#   aln <- scanBam(bam.sorted)
-#   aln <- aln[[1]]
-#   cigs <- table(aln$cigar)
-#   cigs[cigs > length(aln$qname)*0.001]
-#   res <- as.numeric(tab$site[j])
-#   s <- res*3-2
-#   e <- res*3
-#   paste(substr(as.character(ref),s-10,s-1),substr(as.character(ref),s,e),substr(as.character(ref),e+1,e+10),sep=" ")
-#   count.cods(aln,s,e)
-#   print(paste("done with ",tab$id[j],sep=""))
-# }
-}
+cod.tab.pre <- cod.tab[str_detect(cod.tab$X, "pre"),]
+cod.tab.pre[is.na(cod.tab.pre)] <- 0 
+
+
+
+
+
+
+
 
 setwd("G41_G43_G106_exp/")
 #cod.tab <- readRDS("cod.tab.rds")

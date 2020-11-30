@@ -7,7 +7,7 @@
 
 # User-specific files
 .Ruserdata
-/rawdata/reads/
+/rawdata/illumina_reads/
 
 # Example code in package build process
 *-Ex.R
