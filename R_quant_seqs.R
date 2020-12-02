@@ -4,6 +4,8 @@ library(sangerseqR)
 library(stringr)
 library(Biostrings)
 library(seqinr)
+library(reshape2)
+library(kableExtra)
 
 ref <- readDNAStringSet("rawdata/G_wt.fasta")
 refaa <- translate(ref)
@@ -93,7 +95,6 @@ get_cod <- function(table, fns, ref, minreadlength, minpeakratio, maxmismatch, f
 ####analyze site 80 isolates 1-146
 ####site 80 = nuc 240 in G (2395+240=2635)
 ####used 2953 primer. Want ~318bp into the sequence
-setwd("G80")
 trim5 <- 100   ##take 100bp off 5' end
 keep <- 400    ##keep 400bp after 5' trim
 s <- 238    #first nucleotide of codon
@@ -101,9 +102,10 @@ e <- 240    #last nucleotide of codon
 minreadlength <- 300
 minpeakratio <- 0.25
 maxmismatch <- 3
+flankmin <- 15
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G80", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -116,10 +118,10 @@ table <- cbind(run.date,plate.pos,sample.names)
 table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
-table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
+table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 #a few that have heterozygous peaks - 46,80 (i<-11),88 (i<-6),90(i<-69)
-#write.csv(table,file="../g80_1-93.csv")
-#write.csv(table,file="../g80_1-147.csv")
+#write.csv(table,file="results/g80_1-93.csv")
+#write.csv(table,file="results/g80_1-147.csv")
 
 
 ####analyze site 8
@@ -136,7 +138,7 @@ minpeakratio <- 0.25  #minimum minor peak to major peak ratio to call heterozygo
 maxmismatch <- 4 #number of allowable mismatches in the 200bp flanking the modified site. modified site might have 3
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G8", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -161,16 +163,14 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
-#write.csv(table,file="../g8_1-135.csv")
-#write.csv(table,file="../g8_1-223.csv")
+#write.csv(table,file="results/g8_1-135.csv")
+#write.csv(table,file="results/g8_1-223.csv")
 
 
 
 ####analyze site 74
 ####site 74 = nuc 222 in G (2395+222=2617)
 ####used 2953 primer. Want ~336bp into the sequence
-setwd(wd)
-setwd("G74")
 trim5 <- 100   ##take 100bp off 5' end
 keep <- 400    ##keep 400bp after 5' trim
 s <- 220    #first nucleotide of codon
@@ -180,7 +180,7 @@ minpeakratio <- 0.25  #minimum minor peak to major peak ratio to call heterozygo
 maxmismatch <- 4 #number of allowable mismatches in the 200bp flanking the modified site. modified site might have 3
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G74", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -199,14 +199,12 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
-#write.csv(table,file="../g74_1-199.csv")
+#write.csv(table,file="results/g74_1-199.csv")
 
 
 ####analyze site 15
 ####site 15 = nuc 45 in G (2395+45=2440)
 ####used 2953 primer. Want ~513bp into the sequence
-setwd(wd)
-setwd("G15")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 400    ##keep 400bp after 5' trim
 s <- 43    #first nucleotide of codon
@@ -216,7 +214,7 @@ minpeakratio <- 0.25  #minimum minor peak to major peak ratio to call heterozygo
 maxmismatch <- 4 #number of allowable mismatches in the 200bp flanking the modified site. modified site might have 3
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G15", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -231,14 +229,12 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
-#write.csv(table,file="../g15_1-200.csv")
+#write.csv(table,file="results/g15_1-200.csv")
 
 
 ####analyze site 15 NNK
 ####site 15 = nuc 45 in G (2395+45=2440)
 ####used 2953 primer. Want ~513bp into the sequence
-setwd(wd)
-setwd("G15_NNK/")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 400    ##keep 400bp after 5' trim
 s <- 43    #first nucleotide of codon
@@ -248,7 +244,7 @@ minpeakratio <- 0.25  #minimum minor peak to major peak ratio to call heterozygo
 maxmismatch <- 3 #number of allowable mismatches in the 200bp flanking the modified site. modified site might have 3
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G15_NNK", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -274,7 +270,7 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
-#write.csv(table,file="../g15_NNK_1-100.csv")
+#write.csv(table,file="results/g15_NNK_1-100.csv")
 
 
 
@@ -282,8 +278,6 @@ table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e
 ####analyze site 123 isolates 1-144
 ####site 123 = nuc 369 in G (2395+369=2764)
 ####used 2953 primer. Want ~189bp into the sequence
-setwd(wd)
-setwd("G123")
 trim5 <- 50   ##take 50bp off 5' end
 keep <- 500    ##keep 500bp after 5' trim
 s <- 367    #first nucleotide of codon
@@ -294,7 +288,7 @@ maxmismatch <- 4 #number of allowable mismatches in the 200bp flanking(50 bp eit
 flankmin <- 15
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G123", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -319,17 +313,16 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 #a few that have heterozygous peaks - 46,80 (i<-11),88 (i<-6),90(i<-69)
-#write.csv(table,file="../g123_1-94.csv")
-#write.csv(table,file="../g123_1-144.csv")
-#write.csv(table,file="../g123_1-186.csv")
-write.csv(table,file="../g123.csv")
+#write.csv(table,file="results/g123_1-94.csv")
+#write.csv(table,file="results/g123_1-144.csv")
+#write.csv(table,file="results/g123_1-186.csv")
+write.csv(table,file="results/g123.csv")
 
 
 
 ####analyze site 8_NNK isolates 1-190 (picked by stinger)
 ####site 8 = nuc 24 in G (2395+24=2419)
 ####used 2953 primer. Want ~534bp into the sequence
-setwd("G8_NNK")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 22    #first nucleotide of codon
@@ -339,7 +332,7 @@ minpeakratio <- 0.25  #minimum minor peak to major peak ratio to call heterozygo
 maxmismatch <- 3 #number of allowable mismatches in the 200bp flanking(50 bp either side) the modified site
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G8_NNK", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -354,14 +347,13 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
 table <- table[!table$codon=="TTC",]
-#write.csv(table,file="../g8_nnk_1-190.csv")
+#write.csv(table,file="results/g8_nnk_1-190.csv")
 
 
 ####analyze site 106 isolates 1-90
 ####reanalyze site 106 isolates 1-192
 ####site 106 = nuc 318 in G (2395+318=2713)
 ####used 2953 primer. 2953-2713 Want ~240bp into the sequence
-setwd("G106")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 316    #first nucleotide of codon
@@ -371,7 +363,7 @@ minpeakratio <- 0.25  #minimum minor peak to major peak ratio to call heterozygo
 maxmismatch <- 3 #number of allowable mismatches in the 200bp flanking(50 bp either side) the modified site
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G106", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -386,8 +378,8 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
 ###table <- table[!table$codon=="TTC",]   ###easy way to remove one bad one
-#write.csv(table,file="../g106_1-95.csv")
-#write.csv(table,file="../g106_1-192.csv")
+#write.csv(table,file="results/g106_1-95.csv")
+#write.csv(table,file="results/g106_1-192.csv")
 
 
 
@@ -395,8 +387,6 @@ table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e
 ####analyze site 117 isolates 1-192
 ####site 117 = nuc 351 in G (2395+351=2746)
 ####used 2953 primer. 2953-2746 Want ~207bp into the sequence
-setwd(wd)
-setwd("G117")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 349    #first nucleotide of codon
@@ -406,7 +396,7 @@ minpeakratio <- 0.25  #minimum minor peak to major peak ratio to call heterozygo
 maxmismatch <- 3 #number of allowable mismatches in the 200bp flanking(50 bp either side) the modified site
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G117", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -421,8 +411,8 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
 ###table <- table[!table$codon=="TTC",]   ###easy way to remove one bad one
-#write.csv(table,file="../g117_1-96.csv")
-#write.csv(table,file="../g117_1-192.csv")
+#write.csv(table,file="results/g117_1-96.csv")
+#write.csv(table,file="results/g117_1-192.csv")
 
 
 
@@ -430,8 +420,6 @@ table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e
 ####analyze site 43 isolates 1-192
 ####site 43 = nuc 129 in G (2395+129=2524)
 ####used 2953 primer. 2953-2524 Want ~429bp into the sequence
-setwd(wd)
-setwd("G43")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 127    #first nucleotide of codon
@@ -441,7 +429,7 @@ minpeakratio <- 0.25  #minimum minor peak to major peak ratio to call heterozygo
 maxmismatch <- 3 #number of allowable mismatches in the 200bp flanking(50 bp either side) the modified site
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G43", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -456,16 +444,14 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
 ###table <- table[!table$codon=="TTC",]   ###easy way to remove one bad one
-#write.csv(table,file="../g43_1-96.csv")
-#write.csv(table,file="../g43_1-192.csv")
+#write.csv(table,file="results/g43_1-96.csv")
+#write.csv(table,file="results/g43_1-192.csv")
 
 
 ####analyze site 41 isolates 1-96
 ####analyze site 41 isolates 1-144
 ####site 41 = nuc 123 in G (2395+123=2518)
 ####used 2953 primer. 2953-2518 Want ~435bp into the sequence
-setwd(wd)
-setwd("G41")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 121    #first nucleotide of codon
@@ -476,7 +462,7 @@ maxmismatch <- 3 #number of allowable mismatches in the 200bp flanking(50 bp eit
 flankmin <- 50
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G41", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -493,14 +479,12 @@ table$aa <- NA
 #table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 ###table <- table[!table$codon=="TTC",]   ###easy way to remove one bad one
-#write.csv(table,file="../g41_1-96.csv")
-#write.csv(table,file="../g41_1-144.csv")
+#write.csv(table,file="results/g41_1-96.csv")
+#write.csv(table,file="results/g41_1-144.csv")
 
 
 ####analyze site 88 isolates 1-
 ####site 88 = nuc 264 in G (2395+264=2659)
-setwd(wd)
-setwd("G88")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 262    #first nucleotide of codon
@@ -511,7 +495,7 @@ maxmismatch <- 3 #number of allowable mismatches in the 200bp flanking(50 bp eit
 flankmin <- 50
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G88", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -525,16 +509,14 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
-#write.csv(table,file="../g88_1-190.csv")
-#write.csv(table,file="../g88_1-234.csv")
-write.csv(table,file="../g88.csv")
+#write.csv(table,file="results/g88_1-190.csv")
+#write.csv(table,file="results/g88_1-234.csv")
+write.csv(table,file="results/g88.csv")
 
 
 ####analyze site 119 isolates 1-94
 ####analyze site 119 isolates 1-190
 ####site 119*3 = nuc 357 in G (2395+357=2752)
-setwd(wd)
-setwd("G119")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 355    #first nucleotide of codon
@@ -545,7 +527,7 @@ maxmismatch <- 3 #number of allowable mismatches in the 200bp flanking(50 bp eit
 flankmin <- 50
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G119", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -559,15 +541,13 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
-#write.csv(table,file="../g119_1-94.csv")
-#write.csv(table,file="../g119_1-190.csv")
-#write.csv(table,file="../g119_1-235.csv")
-write.csv(table,file="../g119.csv")
+#write.csv(table,file="results/g119_1-94.csv")
+#write.csv(table,file="results/g119_1-190.csv")
+#write.csv(table,file="results/g119_1-235.csv")
+write.csv(table,file="results/g119.csv")
 
 ####analyze site 125 isolates 1-190
 ####site 125*3 = nuc 375 in G (2395+375=2770)
-setwd(wd)
-setwd("G125")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 373    #first nucleotide of codon
@@ -577,7 +557,7 @@ minpeakratio <- 0.25  #minimum minor peak to major peak ratio to call heterozygo
 maxmismatch <- 3 #number of allowable mismatches in the 200bp flanking(50 bp either side) the modified site
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G125", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -591,12 +571,10 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, s, e)
-#write.csv(table,file="../g125_1-190.csv")
+#write.csv(table,file="results/g125_1-190.csv")
 
 ####analyze site 129 isolates 1-144
 ####site 129*3 = nuc 387 in G (2395+387=2782)
-setwd(wd)
-setwd("G129")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 385    #first nucleotide of codon
@@ -607,7 +585,7 @@ maxmismatch <- 4 #number of allowable mismatches in the 200bp flanking(50 bp eit
 flankmin <- 20
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G129", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -622,14 +600,12 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
-#write.csv(table,file="../g129_1-94.csv")
-#write.csv(table,file="../g129_1-144.csv")
+#write.csv(table,file="results/g129_1-94.csv")
+#write.csv(table,file="results/g129_1-144.csv")
 
 
 ####analyze site 145 isolates 1-127
 ####site 148*3 = nuc 444 in G (2395+444=2839)
-setwd(wd)
-setwd("G148")
 trim5 <- 10   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 442    #first nucleotide of codon
@@ -640,7 +616,7 @@ maxmismatch <- 4 #number of allowable mismatches with "flankmin" of the modified
 flankmin <- 10 #number of bases 5' and 3' of the modified codon needed to match btween read and seq 
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G148", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -655,15 +631,13 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
-#write.csv(table,file="../g148_1-94.csv")
-#write.csv(table,file="../g148_1-127.csv")
+#write.csv(table,file="results/g148_1-94.csv")
+#write.csv(table,file="results/g148_1-127.csv")
 
 
 
 ####analyze site 4 isolates 1-127
 ####site 4*3 = nuc 12 in G (2395+12=2407)
-setwd(wd)
-setwd("G4")
 trim5 <- 10   ##take 100bp off 5' end
 keep <- 700    ##keep 400bp after 5' trim
 s <- 10    #first nucleotide of codon
@@ -674,7 +648,7 @@ maxmismatch <- 4 #number of allowable mismatches with "flankmin" of the modified
 flankmin <- 10 #number of bases 5' and 3' of the modified codon needed to match btween read and seq 
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G4", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -689,15 +663,13 @@ table <- as.data.frame(table)
 table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
-#write.csv(table,file="../g4_1-127.csv")
-#write.csv(table,file="../g4_1-173.csv")
-write.csv(table,file="../g4.csv")
+#write.csv(table,file="results/g4_1-127.csv")
+#write.csv(table,file="results/g4_1-173.csv")
+write.csv(table,file="results/g4.csv")
 
 
 ####analyze site 72 isolates 1-159
 ####site 72*3 = nuc 216 in G (2395+216=2611)
-setwd(wd)
-setwd("G72")
 trim5 <- 10   ##take 100bp off 5' end
 keep <- 700    ##keep 400bp after 5' trim
 s <- 214    #first nucleotide of codon
@@ -708,7 +680,7 @@ maxmismatch <- 3 #number of allowable mismatches with "flankmin" of the modified
 flankmin <- 20 #number of bases 5' and 3' of the modified codon needed to match btween read and seq 
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G72", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -724,13 +696,11 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 sum(table(table$aa))/nrow(table)
-#write.csv(table,file="../g72_1-159.csv")
+#write.csv(table,file="results/g72_1-159.csv")
 
 
 ###analyze site 3 isolates 1-X
 ####site 3*3 = nuc 9 in G (2395+9=2404)
-setwd(wd)
-setwd("G3")
 trim5 <- 10   ##take 100bp off 5' end
 keep <- 700    ##keep 400bp after 5' trim
 s <- 7    #first nucleotide of codon
@@ -741,7 +711,7 @@ maxmismatch <- 3 #number of allowable mismatches with "flankmin" of the modified
 flankmin <- 5 #number of bases 5' and 3' of the modified codon needed to match btween read and seq 
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G3", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -758,13 +728,11 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 sum(table(table$aa))/nrow(table)
-#write.csv(table,file="../g3.csv")
+#write.csv(table,file="results/g3.csv")
 
 
 ####analyze site 11 isolates 1-X
 ####site 11*3 = nuc 33 in G (2395+33=2428)
-setwd(wd)
-setwd("G11")
 trim5 <- 10   ##take 100bp off 5' end
 keep <- 700    ##keep 400bp after 5' trim
 s <- 31    #first nucleotide of codon
@@ -775,7 +743,7 @@ maxmismatch <- 3 #number of allowable mismatches with "flankmin" of the modified
 flankmin <- 5 #number of bases 5' and 3' of the modified codon needed to match btween read and seq 
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G11", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -792,12 +760,10 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 sum(table(table$aa))/nrow(table)
-#write.csv(table,file="../g11.csv")
+#write.csv(table,file="results/g11.csv")
 
 ####analyze site 145 isolates 1-X
 ####site 45*3 = nuc 135 in G (2395+135=2530)
-setwd(wd)
-setwd("G45")
 trim5 <- 10   ##take 100bp off 5' end
 keep <- 700    ##keep 400bp after 5' trim
 s <- 133    #first nucleotide of codon
@@ -808,7 +774,7 @@ maxmismatch <- 3 #number of allowable mismatches with "flankmin" of the modified
 flankmin <- 5 #number of bases 5' and 3' of the modified codon needed to match btween read and seq 
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G45", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -825,13 +791,11 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 sum(table(table$aa))/nrow(table)
-#write.csv(table,file="../g45.csv")
+#write.csv(table,file="results/g45.csv")
 
 
 ####analyze site 128 isolates 1-X
 ####site 128*3 = nuc 384 in G (2395+384=2779)
-setwd(wd)
-setwd("G128")
 trim5 <- 5   ##take 100bp off 5' end
 keep <- 700    ##keep 400bp after 5' trim
 s <- 382    #first nucleotide of codon
@@ -842,7 +806,7 @@ maxmismatch <- 3 #number of allowable mismatches with "flankmin" of the modified
 flankmin <- 5 #number of bases 5' and 3' of the modified codon needed to match btween read and seq 
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G128", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -859,14 +823,12 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 sum(table(table$aa))/nrow(table)
-#write.csv(table,file="../g128.csv")
+#write.csv(table,file="results/g128.csv")
 
 
 
 ###analyze site 4 isolates 1-X
 ####site 3*4 = nuc 12 in G (2395+12=2407)
-setwd(wd)
-setwd("G4 new NNN primers/")
 trim5 <- 10   ##take 100bp off 5' end
 keep <- 700    ##keep 400bp after 5' trim
 s <- 10    #first nucleotide of codon
@@ -877,7 +839,7 @@ maxmismatch <- 4 #number of allowable mismatches with "flankmin" of the modified
 flankmin <- 5 #number of bases 5' and 3' of the modified codon needed to match btween read and seq 
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G4_new_NNN_primers", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -894,13 +856,11 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 sum(table(table$aa))/nrow(table)
-#write.csv(table,file="../g4_reorder.csv")
+#write.csv(table,file="results/g4_reorder.csv")
 
 
 ###analyze site 125 isolates 1-X
 ####site 3*125 = nuc 375 in G (2395+375=2770)
-setwd(wd)
-setwd("G125 new NNN primers/")
 trim5 <- 50   ##take 100bp off 5' end
 keep <- 650    ##keep 400bp after 5' trim
 s <- 373    #first nucleotide of codon
@@ -911,7 +871,7 @@ maxmismatch <- 3 #number of allowable mismatches with "flankmin" of the modified
 flankmin <- 5 #number of bases 5' and 3' of the modified codon needed to match btween read and seq 
 
 wt.cod <- subseq(ref,s,e)
-fns <- sort(list.files(getwd(), full.names = TRUE))
+fns <- sort(list.files("rawdata/sanger_reads/G125_new_NNN_primers", full.names = TRUE))
 fns <- fns[grepl("ab1", fns)]
 sample.names <- sapply(strsplit(fns, ".ab1"), `[`, 1)
 sample.names <- c(sapply(strsplit(sample.names, "/"), `[`, str_count(sample.names,"/")+1)[1,])
@@ -928,39 +888,38 @@ table$codon <- NA
 table$aa <- NA
 table <- get_cod(table, fns, ref, minreadlength, minpeakratio, maxmismatch, flankmin, s, e)
 sum(table(table$aa))/nrow(table)
-#write.csv(table,file="../g125_reorder.csv")
+#write.csv(table,file="results/g125_reorder.csv")
 
 
 
 
 #####a little random analysis
-setwd(wd)
 #wts G8-R , G15-S , G74-S, G80-A, G123-V, G106-A, G117-D, G43-Y
-g3 <- read.csv("g3.csv", header=T, row.names = 1)
-g4 <- read.csv("g4.csv", header=T, row.names = 1)
-g4_re <- read.csv("g4_reorder.csv", header=T, row.names = 1)
-g8 <- read.csv("g8.csv", header=T, row.names = 1)
-g8_NNK <- read.csv("g8_nnk.csv", header=T, row.names = 1)
-g11 <- read.csv("g11.csv", header=T, row.names = 1)
-g15 <- read.csv("g15.csv", header=T, row.names = 1)
-g15_NNK <- read.csv("g15_NNK.csv", header=T, row.names = 1)
-g41 <- read.csv("g41.csv", header=T, row.names = 1)
-g43 <- read.csv("g43.csv", header=T, row.names = 1)
-g45 <- read.csv("g45.csv", header=T, row.names = 1)
-g72 <- read.csv("g72.csv", header=T, row.names = 1)
-g74 <- read.csv("g74.csv", header=T, row.names = 1)
-g80 <- read.csv("g80.csv", header=T, row.names = 1)
-g81 <- read.csv("g81.csv", header=T, row.names = 1)
-g88 <- read.csv("g88.csv", header=T, row.names = 1)
-g106 <- read.csv("g106.csv", header=T, row.names = 1)
-g117 <- read.csv("g117.csv", header=T, row.names = 1)
-g119 <- read.csv("g119.csv", header=T, row.names = 1)
-g123 <- read.csv("g123.csv", header=T, row.names = 1)
-g125 <- read.csv("g125.csv", header=T, row.names = 1)
-g125_re <- read.csv("g125_reorder.csv", header=T, row.names = 1)
-g128 <- read.csv("g128.csv", header=T, row.names = 1)
-g129 <- read.csv("g129.csv", header=T, row.names = 1)
-g148 <- read.csv("g148.csv", header=T, row.names = 1)
+g3 <- read.csv("results/g3.csv", header=T, row.names = 1)
+g4 <- read.csv("results/g4.csv", header=T, row.names = 1)
+g4_re <- read.csv("results/g4_reorder.csv", header=T, row.names = 1)
+g8 <- read.csv("results/g8.csv", header=T, row.names = 1)
+g8_NNK <- read.csv("results/g8_nnk.csv", header=T, row.names = 1)
+g11 <- read.csv("results/g11.csv", header=T, row.names = 1)
+g15 <- read.csv("results/g15.csv", header=T, row.names = 1)
+g15_NNK <- read.csv("results/g15_NNK.csv", header=T, row.names = 1)
+g41 <- read.csv("results/g41.csv", header=T, row.names = 1)
+g43 <- read.csv("results/g43.csv", header=T, row.names = 1)
+g45 <- read.csv("results/g45.csv", header=T, row.names = 1)
+g72 <- read.csv("results/g72.csv", header=T, row.names = 1)
+g74 <- read.csv("results/g74.csv", header=T, row.names = 1)
+g80 <- read.csv("results/g80.csv", header=T, row.names = 1)
+g81 <- read.csv("results/g81.csv", header=T, row.names = 1)
+g88 <- read.csv("results/g88.csv", header=T, row.names = 1)
+g106 <- read.csv("results/g106.csv", header=T, row.names = 1)
+g117 <- read.csv("results/g117.csv", header=T, row.names = 1)
+g119 <- read.csv("results/g119.csv", header=T, row.names = 1)
+g123 <- read.csv("results/g123.csv", header=T, row.names = 1)
+g125 <- read.csv("results/g125.csv", header=T, row.names = 1)
+g125_re <- read.csv("results/g125_reorder.csv", header=T, row.names = 1)
+g128 <- read.csv("results/g128.csv", header=T, row.names = 1)
+g129 <- read.csv("results/g129.csv", header=T, row.names = 1)
+g148 <- read.csv("results/g148.csv", header=T, row.names = 1)
 
 
 
@@ -1001,7 +960,6 @@ ktable <- data.frame(c(tot,failed,hets,cods))
 names(ktable) <- "Seq count"
 row.names(ktable) <- c("Total", "Failed", "Hets", "Unique codons")
 
-library(kableExtra)
 kable(ktable, "html") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), position="center", font_size = 16, options(knitr.kable.NA = '-')) %>%
   column_spec(1, bold = T) %>%
@@ -1108,7 +1066,6 @@ all <- rbind(aa_g3,aa_g4,aa_g4_re,aa_g8,aa_g11,aa_g15,aa_g41,aa_g43,aa_g45,aa_g7
 list <- names(table(str_split(all_cods_old$sample.names, "-", simplify = T)[,1]))
 list[! list %in% names(table(all$site))]
 
-library(reshape2)
 all.wide <- data.frame(t(dcast(all, aa ~ site, value.var="freq")))
 names(all.wide) <- as.character(as.matrix(all.wide[1,]))
 all.wide <- all.wide[-1,]
@@ -1121,4 +1078,4 @@ miss <- data.frame(matrix(nrow=nrow(all.wide), ncol=length(aas.miss)))
 names(miss) <- aas.miss
 
 all.wide <- cbind(all.wide,miss)
-write.csv(all.wide, "../protein_G_mutagenesis_AA_counts.csv")
+write.csv(all.wide, "results/protein_G_mutagenesis_AA_counts.csv")

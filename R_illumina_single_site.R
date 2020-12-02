@@ -4,6 +4,7 @@ library(xlsx)
 library(Rsamtools)
 library(Rmisc)
 
+
 PHIX_GENETIC_CODE <- GENETIC_CODE
 attr(PHIX_GENETIC_CODE, "alt_init_codons") <- "ATG"
 
