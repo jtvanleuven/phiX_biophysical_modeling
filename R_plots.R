@@ -4,9 +4,33 @@ library(cowplot)
 library(Biostrings)
 library(seqinr)
 library(reshape2)
+library(dplyr)
+
+
+#functions
+{
+  in.seq <- function(x) {
+    # returns TRUE for elments within ascending sequences
+    (c(diff(x, 1), NA) == 1 & c(NA, diff(x,2), NA) == 2)
+  tmp}
+  
+  contractSeqs <-  function(x) {
+    # returns string formatted with contracted sequences
+    x[in.seq(x)] <- ""
+    gsub(",{2,}", "-", paste(x, collapse=","), perl=TRUE)
+  }
+  
+  findIntRuns <- function(run){
+    rundiff <- c(1, diff(run))
+    difflist <- split(run, cumsum(rundiff!=1))
+    unlist(lapply(difflist, function(x){
+      if(length(x) %in% 0:1) as.character(x) else paste0(x[1], "-", x[length(x)])
+    }), use.names=FALSE)
+  }
+}
 
 ref <- readDNAStringSet("rawdata/G_wt.fasta")
-refaa <- translate(ref)
+refaa <- Biostrings::translate(ref)
 
 ##problems
 ###depends on plaque size code from old stuff still. currently reads in "plot.mat.csv" which is created in "R_visualize_data_v2.R"
@@ -29,6 +53,40 @@ seq.counts <- read.csv(file="results/protein_G_mutagenesis_AA_counts.csv", heade
 GFbind <- read.csv("results/G_mut_GF_bind_ddg_stdev.csv", header = F, stringsAsFactors = F)
 
 dat <- read.csv("results/Combined_pyR_FoldX_data_v3.csv", row.names = 1, stringsAsFactors = F)
+
+
+#H = α-helix
+#B = residue in isolated β-bridge
+#E = extended strand, participates in β ladder
+#G = 3-helix (310 helix)
+#I = 5 helix (π-helix)
+#T = hydrogen bonded turn
+#S = bend 
+#solvent accessibility from yesol
+##she ran dssp (Kabsch,W. and Sander,C. (1983) Biopolymers 22, 2577-2637)
+dssp <- read.csv("results/phixG_dssp.csv", row.names = 1)
+##don't really like the results from this. 
+###residues with high values don't seem to have particularly large RSA values
+
+##tried another surface calculator: http://cib.cf.ocha.ac.jp/bitool/ASA/
+###used pentamer structure
+rsa2 <- read.table("rawdata/surface_pentamer.tab", sep="\t", header = T)
+names(rsa2) <- c("chain","site","aa","area","rsa")
+rsa2 <- rsa2[rsa2$chain %in% c("F","G","H","I","J"),]  ##G chains
+rsa_sum <- rsa2 %>%
+  filter(chain %in% c("F","G","H","I","J")) %>%
+  group_by(site) %>%
+  summarize(mean=mean(rsa))
+names(rsa_sum) <- c("RESIDUE", "RSA2")
+
+tmp <- merge(dssp, rsa_sum, by="RESIDUE") 
+ggplot(tmp, aes(x=RSA, y=RSA2)) +
+  geom_hline(yintercept = .5) +
+  geom_vline(xintercept = .5) +
+  geom_point(size=2, alpha=0.5) +
+  theme_classic()
+##hmmm, maybe yesol used g-only protien
+
 
 
 ##sort of a pain to get rate4site to work
@@ -61,24 +119,45 @@ plot.cons <- Grates[,c("rate4site", "jalview", "site")]
 plot.cons$rate4site <- plot.cons$rate4site*-1 + max(plot.cons$rate4site) #best to transform the rate4site measure. not very intuative
 plot.cons.long <- melt(plot.cons, id.vars=c("site"))
 
-p.rate4site <- ggplot(plot.cons, aes(x=site, y=rate4site)) +
-  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
-  geom_line(color="grey40", size=1.1) +
-  theme_classic() +
-  theme(text = element_text(size=15),axis.text.x = element_blank(), axis.title.x = element_blank(),legend.position = "none")
-p.rate4site
 
-p.jalview <- ggplot(plot.cons, aes(x=site, y=jalview)) +
-  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
-  geom_line(color="grey40", size=1.1) +
+tmp <- plot.cons[plot.cons$rate4site > 3,]
+range <- data.frame(ranges = findIntRuns(tmp$site), stringsAsFactors = F)
+range$xmin <- str_split(range$ranges, "-", simplify = T)[,1]
+range$xmax <- str_split(range$ranges, "-", simplify = T)[,2]
+range[range$xmax == "",]$xmax <- range[range$xmax == "",]$xmin
+range$xmin <- as.numeric(range$xmin)
+range$xmax <- as.numeric(range$xmax)
+
+p.rate4site <- ggplot() +
+  geom_rect(data=range, mapping=aes(xmin=xmin, xmax=xmax, ymin=-Inf, ymax=Inf), alpha=0.5) +
+  geom_line(data=plot.cons, aes(x=site, y=rate4site), color="grey40", size=1.1) +
+  geom_ribbon(data=plot.cons, aes(ymin=rate4site,x=site), ymax=Inf, fill="white") +
   theme_classic() +
   theme(text = element_text(size=15),axis.text.x = element_blank(), axis.title.x = element_blank(),legend.position = "none") +
+  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="#018571", alpha=0.75)
+p.rate4site
+
+tmp2 <- plot.cons[plot.cons$jalview > 6.6,]  ##cutoff about the same
+range2 <- data.frame(ranges = findIntRuns(tmp2$site), stringsAsFactors = F)
+range2$xmin <- str_split(range2$ranges, "-", simplify = T)[,1]
+range2$xmax <- str_split(range2$ranges, "-", simplify = T)[,2]
+range2[range2$xmax == "",]$xmax <- range2[range2$xmax == "",]$xmin
+range2$xmin <- as.numeric(range2$xmin)
+range2$xmax <- as.numeric(range2$xmax)
+
+p.jalview <- ggplot() +
+  geom_rect(data=range2, mapping=aes(xmin=xmin, xmax=xmax, ymin=-Inf, ymax=Inf), alpha=0.5) +
+  geom_line(data=plot.cons, aes(x=site, y=jalview), color="grey40", size=1.1) +
+  geom_ribbon(data=plot.cons, aes(ymin=jalview,x=site), ymax=Inf, fill="white") +
+  theme_classic() +
+  theme(text = element_text(size=15),axis.text.x = element_blank(), axis.title.x = element_blank(),legend.position = "none") +
+  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="#018571", alpha=0.75) +
   ylab("jalview")
 p.jalview
 
 foldx2$site <- as.numeric(foldx2$site)
 p.fold <- ggplot(foldx2, aes(x=site, y=fold)) +
-  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
+  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="#018571", alpha=0.75) +
   geom_hline(yintercept = 0, color="grey") +
   geom_jitter(height = 0.1, width=0.3, alpha=0.3) +
   stat_summary(fun.y=median, geom="point", shape=18,
@@ -91,7 +170,7 @@ p.fold <- ggplot(foldx2, aes(x=site, y=fold)) +
 p.fold
 
 p.bind <- ggplot(foldx2, aes(x=site, y=trimer)) +
-  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
+  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="#018571", alpha=0.75) +
   geom_hline(yintercept = 0, color="grey") +
   geom_jitter(height = 0.1, width=0.3, alpha=0.3) +
   stat_summary(fun.y=median, geom="point", shape=18,
@@ -109,7 +188,8 @@ ggsave(filename = "plots/combo.pdf", width = 8.5, height= 8.5, units = "in")
 
 #secondary structure from uniprot
 #apparently only beta strands are known
-sec_str <- c(13:17, 26:28, 30:33, 36:49, 51:61, 69:83, 88:98, 108:110, 115:117, 120:130, 134:137, 139:150, 152:163)
+sec_str <- data.frame(sites=c(13:17, 26:28, 30:33, 36:49, 51:61, 69:83, 88:98, 108:110, 115:117, 120:130, 134:137, 139:150, 152:163),
+                      y=1, lab="B-sheets")
 sec_str2 <- data.frame(xmin=c(13,26,30,36,51,69,88,108,115,120,134,139,152),
                        xmax=c(17,28,33,49,61,83,98,110,117,130,137,150,163))
 sec_str2$ymin <- 0
@@ -118,18 +198,48 @@ sec_str2$ymax <- 1
 
 ###found interaction stuff in McKenna et al. 1994. J. Mol. Biol. (1994) 237, 517-543
 ##ggint from table 2 (2-fold interactions) and table 5 (5-fold interactions) 
+gg_int2 <- data.frame(sites=c(1:8, 10, 13, 15, 70, 78, 84, 86:87, 89, 108:111, 113:117, 120, 122, 124:125, 134, 148, 156, 167:167, 171),
+                      y="2", lab="Protein interfaces")
 gg_int <- data.frame(xmin=c(1,10,13,15,70,78,84,86,89,108,113,120,122,124,134,148,156,167,171),
                        xmax=c(8,10,13,15,70,78,84,87,89,111,117,120,122,125,134,148,156,168,171))
 gg_int$ymin <- 1
 gg_int$ymax <- 2
 
+ggplot(rsa_sum, aes(x=RESIDUE, y=RSA2)) +
+  geom_hline(yintercept = 0.5) +
+  geom_hline(yintercept = 0.1) +
+  geom_line()+
+  theme_classic()
+
+#surface <- data.frame(rsa_high=rsa_sum[rsa_sum$RSA2 > 0.5, ]$RESIDUE, rsa_high_stop=rsa_sum[rsa_sum$RSA2 > 0.5, ]$RESIDUE)
+surface <- data.frame(sites=rsa_sum[rsa_sum$RSA2 > 0.3, ]$RESIDUE, y=3, lab="Surface")
+
+buried <- data.frame(sites=rsa_sum[rsa_sum$RSA2 < 0.05, ]$RESIDUE, y=4, lab="Buried")
+#names(surface) <- c("xmin","xmax")
+#surface$ymin <- 2
+#surface$ymax <- 3
+
+#p.str <- ggplot() +
+#  geom_rect(data=sec_str2, mapping=aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), color="#a6cee3", fill="#a6cee3") +
+#  geom_rect(data=gg_int, mapping=aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), color="#b2df8a", fill="#b2df8a") +
+#  geom_rect(data=surface, mapping=aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), color="#c2a5cf", fill="#c2a5cf") +
+#  theme_classic() +
+#  xlab("") +
+#  theme(text = element_text(size=15), axis.title.x = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
+#  xlim(c(0,175))
+#p.str
+
 p.str <- ggplot() +
-  geom_rect(data=sec_str2, mapping=aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), color="#a6cee3", fill="#a6cee3") +
-  geom_rect(data=gg_int, mapping=aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), color="#b2df8a", fill="#b2df8a") +
+  geom_tile(data=sec_str, mapping=aes(x=sites, y=lab), color="#a6cee3", fill="#a6cee3") +
+  geom_tile(data=gg_int2, mapping=aes(x=sites, y=lab), color="#b2df8a", fill="#b2df8a") +
+  geom_tile(data=surface, mapping=aes(x=sites, y=lab), color="#c2a5cf", fill="#c2a5cf") +
+  geom_tile(data=buried, mapping=aes(x=sites, y=lab), color="#7b3294", fill="#7b3294") +
+  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="#018571", alpha=0.75) +
   theme_classic() +
   xlab("") +
-  theme(text = element_text(size=15), axis.title.x = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
-  xlim(c(0,175))
+  theme(text = element_text(size=15), axis.title.x = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank()) +
+  xlim(c(0,175)) +
+  scale_y_discrete(limits=c(  "B-sheets", "Protein interfaces","Surface", "Buried"))
 p.str
 
 plot_grid(p.rate4site, 
@@ -137,6 +247,12 @@ plot_grid(p.rate4site,
           p.fold, 
           p.bind + theme(axis.title.x = element_blank(), axis.text.x = element_blank()),
           p.str, nrow=5, align = 'v')
+ggsave(filename = "plots/combo_dists.pdf", width = 10, height= 9, units = "in")
+
+
+
+
+
 
 
 #####plot distance matrix heatmap

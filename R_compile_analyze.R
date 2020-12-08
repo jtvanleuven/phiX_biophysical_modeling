@@ -1,0 +1,7 @@
+library(ggplot2)
+library(stringr)
+library(cowplot)
+library(Biostrings)
+library(seqinr)
+library(reshape2)
+library(dplyr)
