@@ -5,6 +5,7 @@ library(Biostrings)
 library(seqinr)
 library(reshape2)
 library(dplyr)
+library(viridis)
 
 
 #functions
@@ -36,7 +37,7 @@ refaa <- Biostrings::translate(ref)
 ###depends on plaque size code from old stuff still. currently reads in "plot.mat.csv" which is created in "R_visualize_data_v2.R"
 
 
-plot.mat <- read.csv("results/plot.mat.csv", row.names = 1, stringsAsFactors = F)  ###need to add code to the repository that generates this file
+plot.mat <- read.csv("results/plot.mat.csv", stringsAsFactors = F) 
 foldx <- read.csv(file="results/ddG_foldX_GProtein.csv", header=T, stringsAsFactors = F)
 foldx2 <- foldx
 foldx2$aa <- str_sub(foldx2$mut,1,1)
@@ -46,7 +47,7 @@ foldx2$site <- str_extract(foldx2$mut,'\\d+')
 ##pretty sure craig made this table
 dat <- read.csv("results/Combined_pyR_FoldX_data_v3.csv", row.names = 1, stringsAsFactors = F)
 ##pretty sure I made this table. Contains plaque size and codon recovery data.
-datCodons <- read.csv("results/data_combined.csv", stringsAsFactors = F)
+datCodons <- read.csv("results/data_combined_allcods.csv", stringsAsFactors = F)
 
 seq.counts <- read.csv(file="results/protein_G_mutagenesis_AA_counts.csv", header=T)
 ##F-G data
@@ -253,79 +254,130 @@ ggsave(filename = "plots/combo_dists.pdf", width = 10, height= 9, units = "in")
 
 
 
+####################################################################################################################################################################################
+#plot differences in plaque size between different codons
+datCodons <- read.csv("results/data_combined_allcods.csv", stringsAsFactors = F)
+ codDiffs <- 
+  datCodons %>%
+  #filter(!codon == "XXX") %>%
+  filter(!is.na(start.cod)) %>%
+  group_by(site, aa) %>%
+  filter(n() > 1)
+
+##renormalize with dropping unobserved codons. plot looks funny b/c lots of expected values that are not observed
+codDiffs[is.na(codDiffs$aacount),]$codonfreq <- NA
+codDiffs$start.cod.obs <- codDiffs$start.cod
+codDiffs[which(is.na(codDiffs$codonfreq)),]$start.cod.obs <- 0
+codDiffs[which(is.na(codDiffs$codonfreq)),]$codonfreq <- 0
+
+codDiffs <- codDiffs %>%
+  group_by(site) %>%
+  mutate(norm = start.cod.obs/sum(start.cod.obs))
+codDiffs$start.cod.obs <- codDiffs$norm
+codDiffs <- codDiffs[,-which(names(codDiffs)=="norm")]
+
+codDiffs$codonOE <- codDiffs$codonfreq-codDiffs$start.cod
+codDiffs$codonOE <- (codDiffs$codonfreq-codDiffs$start.cod.obs)/ codDiffs$start.cod.obs ##values calculated only for observed
+
+#get wt codons
+cods <- data.frame(site = 1:176, seq = substring(ref, seq(1,nchar(ref),3), seq(3,nchar(ref),3)))
+codDiffs$wt <- cods[codDiffs$site,]$seq
+codDiffs$wt <- codDiffs$wt == codDiffs$codon
+##issue with one sample that only had 1 codon show up
+codDiffs[codDiffs$sample.names == "4-161",]$codonOE <- 0
+codDiffs[codDiffs$sample.names == "4-54",]$codonOE <- 0
 
 
-#####plot distance matrix heatmap
-library(distances)
-library(gplots)
-dat <- read.table(file="results/fg_alpha", stringsAsFactors = F)
-dat.s <- data.frame(dat[,7:9])
-names(dat.s) <- c("x","y","z")
-#dist.mat <- matrix(nrow=nrow(dat),ncol=nrow(dat))
-
-euclidean_distance <- function(p,q){
-  sqrt(sum((p - q)^2))
-}
-
-euclidean_distance(dat.s[1,],dat.s[2,])
-
-#dist.mat <- stats::dist(dat.s[1:10,], diag = T, upper=T) ###huh. having a problem with using all the data
-
-#trying differenc package
-dist.mat.2 <- distances(dat.s)
-dist.mat.2 <- as.matrix(distances(dat.s))
-ggplot(dist.mat.2) +
-  geom_tile
-
-heatmap.2(dist.mat.2, Rowv=F, Colv=F, dendrogram = "none", labRow=F, labCol = F, trace="none", col=c("blue", "lightgrey", "white"))
-
-
-colors = c(seq(0,10,length=100),seq(10.01,20,length=100),seq(20.01,105,length=100))
-my_palette <- colorRampPalette(c("red", "black", "skyblue"))(n = 299)
-heatmap.2(dist.mat.2, col=my_palette, 
-          breaks=colors, density.info="none", trace="none", Rowv=F, Colv=F, 
-          dendrogram="none", symm=F,symkey=F,symbreaks=T, scale="none",
-          labRow=F, labCol=F)
-
-dist.mat.g <- dist.mat.2[427:601,427:601]
-colnames(dist.mat.g) <- 1:175
-row.names(dist.mat.g) <- 1:175
-dist.mat.g.long <- melt(dist.mat.g)
-dist.mat.g.long$lin_dist <- abs(dist.mat.g.long$Var1-dist.mat.g.long$Var2)
-long.dist.g <- dist.mat.g.long[dist.mat.g.long$lin_dist > 5,]
-
-p.dist <- ggplot(long.dist.g, aes(x=Var1, y=value)) +
-  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
-  #geom_hline(yintercept = 0, color="grey") +
-  geom_jitter(height = 0.1, width=0.3, alpha=0.3) +
-  stat_summary(fun.y=median, geom="point", shape=18,
-               size=2, color="red") +
+limit <- max(abs(na.omit(codDiffs$codonOE))) * c(-1,1)
+ggplot(codDiffs,aes(x=as.factor(site), y=codon, fill=codonOE, color=wt)) +
+  geom_tile(width=0.95, height=0.95, size=0.5) +
   theme_classic() +
-  theme(axis.text.x=element_text(angle=90,hjust=1)) +
-  ylab(expression(Delta~Delta~G[trimer])) +
-  xlab("") +
-  theme(text = element_text(size=15), axis.title.x = element_blank())
-p.bind
+  #scale_fill_distiller("O-E/E", palette = "RdYlBu",na.value = "white") +
+  scale_fill_distiller("O-E/E", palette = "RdYlBu", limit=limit, na.value = "white") +
+  scale_color_manual(values=c("white", "black"), guide="none") +
+  #scale_fill_distiller("Observ-Expect", palette = "RdYlBu", na.value = "white") +
+  #geom_tile(data=cods.short, aes(x=as.factor(site), y=seq), fill="black")+
+  facet_grid(aa~.,scales = "free_y", space="free_y", switch="y", drop = T) +
+  theme(strip.placement = "outside",                
+        strip.background = element_rect(fill = "white", colour = "white"), 
+        axis.title = element_blank())
+ggsave(filename = "plots/codon_freq.pdf", width = 6.5, height= 9.5, units = "in")
 
 
-tmp <- long.dist.g[,c("Var1", "value")]
-library(dplyr)
-dist.agg <- tmp %>% group_by(Var1) %>%
-  summarise_each(funs(.[which.max(abs(.))]))
-
-
-p.dist.agg <- ggplot(dist.agg, aes(x=Var1, y=value)) +
-  geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
-  geom_line(color="grey40", size=1.1) +
-  theme_classic() +
-  ylab("avg atomic dist") +
-  theme(text = element_text(size=15),axis.text.x = element_blank(), axis.title.x = element_blank(),legend.position = "none")
-p.dist.agg
-
-plot_grid(p.rate4site, 
-          p.jalview, 
-          p.fold, 
-          p.bind + theme(axis.title.x = element_blank(), axis.text.x = element_blank()),
-          p.dist.agg,
-          p.str, nrow=6, align = 'v')
-ggsave(filename = "plots/combo_dists.pdf", width = 10, height= 10, units = "in")
+# 
+# 
+# 
+# #####plot distance matrix heatmap
+# library(distances)
+# library(gplots)
+# dat <- read.table(file="results/fg_alpha", stringsAsFactors = F)
+# dat.s <- data.frame(dat[,7:9])
+# names(dat.s) <- c("x","y","z")
+# #dist.mat <- matrix(nrow=nrow(dat),ncol=nrow(dat))
+# 
+# euclidean_distance <- function(p,q){
+#   sqrt(sum((p - q)^2))
+# }
+# 
+# euclidean_distance(dat.s[1,],dat.s[2,])
+# 
+# #dist.mat <- stats::dist(dat.s[1:10,], diag = T, upper=T) ###huh. having a problem with using all the data
+# 
+# #trying differenc package
+# dist.mat.2 <- distances(dat.s)
+# dist.mat.2 <- as.matrix(distances(dat.s))
+# ggplot(dist.mat.2) +
+#   geom_tile
+# 
+# heatmap.2(dist.mat.2, Rowv=F, Colv=F, dendrogram = "none", labRow=F, labCol = F, trace="none", col=c("blue", "lightgrey", "white"))
+# 
+# 
+# colors = c(seq(0,10,length=100),seq(10.01,20,length=100),seq(20.01,105,length=100))
+# my_palette <- colorRampPalette(c("red", "black", "skyblue"))(n = 299)
+# heatmap.2(dist.mat.2, col=my_palette, 
+#           breaks=colors, density.info="none", trace="none", Rowv=F, Colv=F, 
+#           dendrogram="none", symm=F,symkey=F,symbreaks=T, scale="none",
+#           labRow=F, labCol=F)
+# 
+# dist.mat.g <- dist.mat.2[427:601,427:601]
+# colnames(dist.mat.g) <- 1:175
+# row.names(dist.mat.g) <- 1:175
+# dist.mat.g.long <- melt(dist.mat.g)
+# dist.mat.g.long$lin_dist <- abs(dist.mat.g.long$Var1-dist.mat.g.long$Var2)
+# long.dist.g <- dist.mat.g.long[dist.mat.g.long$lin_dist > 5,]
+# 
+# p.dist <- ggplot(long.dist.g, aes(x=Var1, y=value)) +
+#   geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
+#   #geom_hline(yintercept = 0, color="grey") +
+#   geom_jitter(height = 0.1, width=0.3, alpha=0.3) +
+#   stat_summary(fun.y=median, geom="point", shape=18,
+#                size=2, color="red") +
+#   theme_classic() +
+#   theme(axis.text.x=element_text(angle=90,hjust=1)) +
+#   ylab(expression(Delta~Delta~G[trimer])) +
+#   xlab("") +
+#   theme(text = element_text(size=15), axis.title.x = element_blank())
+# p.bind
+# 
+# 
+# tmp <- long.dist.g[,c("Var1", "value")]
+# library(dplyr)
+# dist.agg <- tmp %>% group_by(Var1) %>%
+#   summarise_each(funs(.[which.max(abs(.))]))
+# 
+# 
+# p.dist.agg <- ggplot(dist.agg, aes(x=Var1, y=value)) +
+#   geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
+#   geom_line(color="grey40", size=1.1) +
+#   theme_classic() +
+#   ylab("avg atomic dist") +
+#   theme(text = element_text(size=15),axis.text.x = element_blank(), axis.title.x = element_blank(),legend.position = "none")
+# p.dist.agg
+# 
+# plot_grid(p.rate4site, 
+#           p.jalview, 
+#           p.fold, 
+#           p.bind + theme(axis.title.x = element_blank(), axis.text.x = element_blank()),
+#           p.dist.agg,
+#           p.str, nrow=6, align = 'v')
+# ggsave(filename = "plots/combo_dists.pdf", width = 10, height= 10, units = "in")

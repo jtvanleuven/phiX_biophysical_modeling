@@ -136,8 +136,8 @@ if(slow){
 }
 cod.tab$sample <- tab$id
 row.names(cod.tab) <- cod.tab$sample
-write.csv(cod.tab, "cod_tab.csv", quote = F)
-cod.tab <- read.csv("cod_tab.csv")
+write.csv(cod.tab, "results/cod_tab.csv", quote = F)
+cod.tab <- read.csv("results/cod_tab.csv")
 
 cod.tab.pre <- cod.tab[str_detect(cod.tab$X, "pre"),]
 cod.tab.pre[is.na(cod.tab.pre)] <- 0 
