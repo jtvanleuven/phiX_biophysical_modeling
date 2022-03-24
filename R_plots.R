@@ -6,7 +6,8 @@ library(seqinr)
 library(reshape2)
 library(dplyr)
 library(viridis)
-
+library(scales)
+library(performace)
 
 #functions
 {
@@ -32,6 +33,7 @@ library(viridis)
 
 ref <- readDNAStringSet("rawdata/G_wt.fasta")
 refaa <- Biostrings::translate(ref)
+write.fasta(refaa, names = names(refaa), file.out = 'rawdata/G_wt.faa')
 
 ##problems
 ###depends on plaque size code from old stuff still. currently reads in "plot.mat.csv" which is created in "R_visualize_data_v2.R"
@@ -185,7 +187,7 @@ p.bind
 
 
 plot_grid(p.rate4site, p.jalview, p.fold, p.bind, nrow=4, align = 'v')
-ggsave(filename = "plots/combo.pdf", width = 8.5, height= 8.5, units = "in")
+#ggsave(filename = "plots/combo.pdf", width = 8.5, height= 8.5, units = "in")
 
 #secondary structure from uniprot
 #apparently only beta strands are known
@@ -248,10 +250,15 @@ plot_grid(p.rate4site,
           p.fold, 
           p.bind + theme(axis.title.x = element_blank(), axis.text.x = element_blank()),
           p.str, nrow=5, align = 'v')
-ggsave(filename = "plots/combo_dists.pdf", width = 10, height= 9, units = "in")
+#ggsave(filename = "plots/combo_dists.pdf", width = 10, height= 9, units = "in")
 
 
-
+plot_grid(p.fold, 
+          p.bind + theme(axis.title.x = element_blank(), axis.text.x = element_blank()),
+          p.str, 
+          p.jalview + ylab("Amino acid \n conservation"),
+          nrow=4, align = 'v')
+#ggsave(filename = "plots/combo_dists.pdf", width = 10, height= 9, units = "in")
 
 
 ####################################################################################################################################################################################
@@ -267,7 +274,7 @@ datCodons <- read.csv("results/data_combined_allcods.csv", stringsAsFactors = F)
 ##renormalize with dropping unobserved codons. plot looks funny b/c lots of expected values that are not observed
 codDiffs[is.na(codDiffs$aacount),]$codonfreq <- NA
 codDiffs$start.cod.obs <- codDiffs$start.cod
-codDiffs[which(is.na(codDiffs$codonfreq)),]$start.cod.obs <- 0
+#codDiffs[which(is.na(codDiffs$codonfreq)),]$start.cod.obs <- 0
 codDiffs[which(is.na(codDiffs$codonfreq)),]$codonfreq <- 0
 
 codDiffs <- codDiffs %>%
@@ -276,24 +283,46 @@ codDiffs <- codDiffs %>%
 codDiffs$start.cod.obs <- codDiffs$norm
 codDiffs <- codDiffs[,-which(names(codDiffs)=="norm")]
 
-codDiffs$codonOE <- codDiffs$codonfreq-codDiffs$start.cod
+#codDiffs$codonOE <- codDiffs$codonfreq-codDiffs$start.cod.obs
 codDiffs$codonOE <- (codDiffs$codonfreq-codDiffs$start.cod.obs)/ codDiffs$start.cod.obs ##values calculated only for observed
+codDiffs[codDiffs$codonOE=="NaN",]$codonOE <- NA   #####not observed in sequence data
+codDiffs[is.infinite(codDiffs$codonOE),]$codonOE <- NA   #####not observed in sequence data
 
 #get wt codons
 cods <- data.frame(site = 1:176, seq = substring(ref, seq(1,nchar(ref),3), seq(3,nchar(ref),3)))
 codDiffs$wt <- cods[codDiffs$site,]$seq
 codDiffs$wt <- codDiffs$wt == codDiffs$codon
 ##issue with one sample that only had 1 codon show up
-codDiffs[codDiffs$sample.names == "4-161",]$codonOE <- 0
-codDiffs[codDiffs$sample.names == "4-54",]$codonOE <- 0
+#codDiffs[codDiffs$sample.names == "4-161",]$codonOE <- 0
+#codDiffs[codDiffs$sample.names == "4-54",]$codonOE <- 0
+codDiffs$codonOE_plot <- codDiffs$codonOE
+fix <- which(codDiffs$codonOE == -1)   ###these values mean 
+#codDiffs[fix,]$codonOE_plot <- -1 * max(na.omit(codDiffs$codonOE))
+##think that I'm going to set codons observed in only one type of data to the max or min value for plotting
+codDiffs[fix,]$codonOE_plot <- NA
+ntobs <- which(codDiffs$codonfreq == 0) 
+ntobs <- c(ntobs, which(codDiffs$start.cod.obs == 0))
+ntobs <- as.numeric(names(table(ntobs)[table(ntobs) ==1]))
+  
+codDiffs$codonOE_plot2 <- 0
+codDiffs[ntobs,]$codonOE_plot2 <- codDiffs[ntobs,]$codonfreq-codDiffs[ntobs,]$start.cod.obs
+codDiffs[codDiffs$codonOE_plot2 > 0,]$codonOE_plot2 <- max(na.omit(codDiffs$codonOE_plot))
+codDiffs[codDiffs$codonOE_plot2 < 0,]$codonOE_plot2 <- min(na.omit(codDiffs$codonOE_plot))
+codDiffs[codDiffs$codonOE_plot2 == 0,]$codonOE_plot2 <- NA
+View(codDiffs[ntobs,c('site','codon','codonfreq','start.cod.obs','codonOE','codonOE_plot', 'codonOE_plot2')])
 
-
-limit <- max(abs(na.omit(codDiffs$codonOE))) * c(-1,1)
-ggplot(codDiffs,aes(x=as.factor(site), y=codon, fill=codonOE, color=wt)) +
+#limit <- max(abs(na.omit(codDiffs$codonOE))) * c(-1,1)
+ggplot(codDiffs,aes(x=as.factor(site), y=codon, fill=codonOE_plot, color=wt)) +
   geom_tile(width=0.95, height=0.95, size=0.5) +
+  geom_point(data=codDiffs[ntobs,], aes(x=as.factor(site), y=codon, fill=codonOE_plot2), shape=21, size=3)+
   theme_classic() +
   #scale_fill_distiller("O-E/E", palette = "RdYlBu",na.value = "white") +
-  scale_fill_distiller("O-E/E", palette = "RdYlBu", limit=limit, na.value = "white") +
+  #scale_fill_distiller("O-E/E", palette = "RdYlBu", limit=limit, na.value = "white") +
+  scale_fill_gradientn("O-E/E",
+                       colours=c("#253494", "#ffffcc", "#bd0026"), 
+                       limit=c(min(na.omit(codDiffs$codonOE_plot)), max(na.omit(codDiffs$codonOE_plot))),  
+                       values = rescale(c(min(na.omit(codDiffs$codonOE_plot)),0,max(na.omit(codDiffs$codonOE_plot)))),
+                       na.value = "white") +
   scale_color_manual(values=c("white", "black"), guide="none") +
   #scale_fill_distiller("Observ-Expect", palette = "RdYlBu", na.value = "white") +
   #geom_tile(data=cods.short, aes(x=as.factor(site), y=seq), fill="black")+
@@ -301,83 +330,120 @@ ggplot(codDiffs,aes(x=as.factor(site), y=codon, fill=codonOE, color=wt)) +
   theme(strip.placement = "outside",                
         strip.background = element_rect(fill = "white", colour = "white"), 
         axis.title = element_blank())
-ggsave(filename = "plots/codon_freq.pdf", width = 6.5, height= 9.5, units = "in")
+#ggsave(filename = "plots/codon_freq.pdf", width = 6.5, height= 9.5, units = "in")
+#ggsave(filename = "plots/codon_freq.png", width = 6.5, height= 9.5, units = "in")
 
 
-# 
-# 
-# 
-# #####plot distance matrix heatmap
-# library(distances)
-# library(gplots)
-# dat <- read.table(file="results/fg_alpha", stringsAsFactors = F)
-# dat.s <- data.frame(dat[,7:9])
-# names(dat.s) <- c("x","y","z")
-# #dist.mat <- matrix(nrow=nrow(dat),ncol=nrow(dat))
-# 
-# euclidean_distance <- function(p,q){
-#   sqrt(sum((p - q)^2))
-# }
-# 
-# euclidean_distance(dat.s[1,],dat.s[2,])
-# 
-# #dist.mat <- stats::dist(dat.s[1:10,], diag = T, upper=T) ###huh. having a problem with using all the data
-# 
-# #trying differenc package
-# dist.mat.2 <- distances(dat.s)
-# dist.mat.2 <- as.matrix(distances(dat.s))
-# ggplot(dist.mat.2) +
-#   geom_tile
-# 
-# heatmap.2(dist.mat.2, Rowv=F, Colv=F, dendrogram = "none", labRow=F, labCol = F, trace="none", col=c("blue", "lightgrey", "white"))
-# 
-# 
-# colors = c(seq(0,10,length=100),seq(10.01,20,length=100),seq(20.01,105,length=100))
-# my_palette <- colorRampPalette(c("red", "black", "skyblue"))(n = 299)
-# heatmap.2(dist.mat.2, col=my_palette, 
-#           breaks=colors, density.info="none", trace="none", Rowv=F, Colv=F, 
-#           dendrogram="none", symm=F,symkey=F,symbreaks=T, scale="none",
-#           labRow=F, labCol=F)
-# 
-# dist.mat.g <- dist.mat.2[427:601,427:601]
-# colnames(dist.mat.g) <- 1:175
-# row.names(dist.mat.g) <- 1:175
-# dist.mat.g.long <- melt(dist.mat.g)
-# dist.mat.g.long$lin_dist <- abs(dist.mat.g.long$Var1-dist.mat.g.long$Var2)
-# long.dist.g <- dist.mat.g.long[dist.mat.g.long$lin_dist > 5,]
-# 
-# p.dist <- ggplot(long.dist.g, aes(x=Var1, y=value)) +
-#   geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
-#   #geom_hline(yintercept = 0, color="grey") +
-#   geom_jitter(height = 0.1, width=0.3, alpha=0.3) +
-#   stat_summary(fun.y=median, geom="point", shape=18,
-#                size=2, color="red") +
-#   theme_classic() +
-#   theme(axis.text.x=element_text(angle=90,hjust=1)) +
-#   ylab(expression(Delta~Delta~G[trimer])) +
-#   xlab("") +
-#   theme(text = element_text(size=15), axis.title.x = element_blank())
-# p.bind
-# 
-# 
-# tmp <- long.dist.g[,c("Var1", "value")]
-# library(dplyr)
-# dist.agg <- tmp %>% group_by(Var1) %>%
-#   summarise_each(funs(.[which.max(abs(.))]))
-# 
-# 
-# p.dist.agg <- ggplot(dist.agg, aes(x=Var1, y=value)) +
-#   geom_vline(xintercept = as.numeric(unique(datCodons$site)), color="grey", alpha=0.5) +
-#   geom_line(color="grey40", size=1.1) +
-#   theme_classic() +
-#   ylab("avg atomic dist") +
-#   theme(text = element_text(size=15),axis.text.x = element_blank(), axis.title.x = element_blank(),legend.position = "none")
-# p.dist.agg
-# 
-# plot_grid(p.rate4site, 
-#           p.jalview, 
-#           p.fold, 
-#           p.bind + theme(axis.title.x = element_blank(), axis.text.x = element_blank()),
-#           p.dist.agg,
-#           p.str, nrow=6, align = 'v')
-# ggsave(filename = "plots/combo_dists.pdf", width = 10, height= 10, units = "in")
+ggplot(codDiffs, aes(x=start.cod.obs, y=codonfreq)) +
+  geom_abline(slope = 1, intercept = 0, color="grey55") +
+  geom_point() +
+  theme_bw() +
+  facet_wrap(~site, scales='free') +
+  labs(x="Start frequency (Illumina)", y="Plaque genotype frequency (Sanger)")
+  #facet_wrap(~site)
+#ggsave(filename = "plots/codon_scatter.pdf", width = 10, height= 8, units = "in")
+
+
+
+
+
+###I created an absolute disaster trying to maintain old analyses. Just start over with fresh csv files.
+start_freq <- read.csv("results/start_freq_codon.csv", row.names = 1)
+start_freq$id <- row.names(start_freq)
+start_freq <- start_freq[,!names(start_freq) %in% c('mapped','rowsum','site')]
+start_freq_long <- melt(start_freq, id.vars = c('id'))
+start_freq_long$site <- str_extract(start_freq_long$id, '\\d+')
+names(start_freq_long) <- c('id', 'codon', 'readcnt' ,'site')
+  
+start_freq_long <- start_freq_long %>%
+  group_by(id) %>%
+  #summarise(n=n()) %>%
+  mutate(readfreq = readcnt/sum(readcnt))
+
+#merge g4 and g125 redo and old. average frequency. sum reads.
+start_freq_long_merge <- start_freq_long[,-1]
+start_freq_long_merge <- start_freq_long_merge %>%
+  group_by(codon,site) %>%
+  mutate(readfreq= mean(readfreq)) %>%
+  mutate(readcnt=sum(readcnt))
+start_freq_long_merge <- start_freq_long_merge[!duplicated(start_freq_long_merge),]
+
+all_cods <- read.csv("results/all_cods.csv")
+all_cods$site <- str_extract(all_cods$isolate, "\\d+")
+
+geno_counts <- all_cods %>%
+  group_by(site, codon) %>%
+  summarise(plqcnt=n()) %>%
+  mutate(genofreq = plqcnt/sum(plqcnt))
+
+geno_counts$id <- paste(geno_counts$site, geno_counts$codon, sep="_")
+start_freq_long_merge$id <- paste(start_freq_long_merge$site, start_freq_long_merge$codon, sep="_")
+
+comp_freqs <- merge(geno_counts, start_freq_long_merge, by='id', all=T)
+comp_freqs$codon <- str_split(comp_freqs$id, "_", simplify = T)[,2]
+comp_freqs$site <- str_split(comp_freqs$id, "_", simplify = T)[,1]
+comp_freqs <- comp_freqs[,c('id', 'plqcnt', 'genofreq', 'readcnt', 'readfreq', 'codon', 'site')]
+comp_freqs$aa <- PHIX_GENETIC_CODE[comp_freqs$codon]
+comp_freqs[is.na(comp_freqs)] <- 0
+comp_freqs$site <- factor(comp_freqs$site, levels = sort(as.numeric(unique(comp_freqs$site))))
+
+ggplot(comp_freqs, aes(x=readfreq, y=genofreq)) +
+  geom_abline(slope = 1, intercept = 0, color="grey55") +
+  geom_point() +
+  theme_bw() +
+  facet_wrap(~site, scales='free') +
+  labs(x="Start frequency (Illumina)", y="Plaque genotype frequency (Sanger)")
+#facet_wrap(~site)
+#ggsave(filename = "plots/codon_scatter.pdf", width = 10, height= 8, units = "in")
+#ggsave(filename = "plots/codon_scatter.png", width = 10, height= 8, units = "in")
+
+ntobs <- which(comp_freqs$genofreq == 0) 
+ntobs <- c(ntobs, which(comp_freqs$readfreq == 0))
+ntobs <- as.numeric(names(table(ntobs)[table(ntobs) ==1]))
+
+comp_freqs$codonOE <- comp_freqs$genofreq-comp_freqs$readfreq
+#comp_freqs$codonOE <- (comp_freqs$genofreq-comp_freqs$readfreq)/comp_freqs$readfreq ##values calculated only for observed
+comp_freqs[ntobs,]$codonOE <- NA   #####not observed in sequence data
+
+#get wt codons
+cods <- data.frame(site = 1:176, seq = substring(ref, seq(1,nchar(ref),3), seq(3,nchar(ref),3)))
+comp_freqs$wt <- cods[comp_freqs$site,]$seq
+comp_freqs$wt <- comp_freqs$wt == comp_freqs$codon
+comp_freqs$codonOE_plot <- NA
+
+##think that I'm going to set codons observed in only one type of data to the max or min value for plotting
+comp_freqs[ntobs,]$codonOE_plot <- comp_freqs[ntobs,]$genofreq-comp_freqs[ntobs,]$readfreq
+comp_freqs[which(comp_freqs$codonOE_plot > 0),]$codonOE_plot <- max(na.omit(comp_freqs$codonOE))
+#comp_freqs[which(comp_freqs$codonOE_plot > 0),]$codonOE_plot <- 1
+comp_freqs[which(comp_freqs$codonOE_plot < 0),]$codonOE_plot <- min(na.omit(comp_freqs$codonOE))
+#comp_freqs[which(comp_freqs$codonOE_plot < 0),]$codonOE_plot <- -1
+comp_freqs[which(comp_freqs$codonOE == 0),]$codonOE <- NA
+
+
+#limit <- max(abs(na.omit(codDiffs$codonOE))) * c(-1,1)
+ggplot(comp_freqs,aes(x=as.factor(site), y=codon, fill=codonOE, color=wt)) +
+  geom_tile(width=0.95, height=0.95, size=0.5) +
+  geom_point(data=comp_freqs[ntobs,], aes(x=as.factor(site), y=codon, fill=codonOE_plot), shape=21, size=2)+
+  theme_classic() +
+  #scale_fill_distiller("O-E/E", palette = "RdYlBu",na.value = "white") +
+  #scale_fill_distiller("O-E/E", palette = "RdYlBu", limit=limit, na.value = "white") +
+  scale_fill_gradientn("O-E",
+                       colours=c("#253494", "#ffffcc", "#bd0026"), 
+                       limit=c(min(na.omit(comp_freqs$codonOE)), max(na.omit(comp_freqs$codonOE))),  
+                       values = rescale(c(min(na.omit(comp_freqs$codonOE)),0,max(na.omit(comp_freqs$codonOE)))),
+                       na.value = "white") +
+  scale_color_manual(values=c("white", "black"), guide="none") +
+  #scale_fill_distiller("Observ-Expect", palette = "RdYlBu", na.value = "white") +
+  #geom_tile(data=cods.short, aes(x=as.factor(site), y=seq), fill="black")+
+  facet_grid(aa~.,scales = "free_y", space="free_y", switch="y", drop = T) +
+  theme(strip.placement = "outside",                
+        strip.background = element_rect(fill = "white", colour = "white"), 
+        axis.title = element_blank())
+#ggsave(filename = "plots/codon_freq.pdf", width = 6.5, height= 9.5, units = "in")
+#ggsave(filename = "plots/codon_freq.png", width = 6.5, height= 9.5, units = "in")
+
+
+
+
+
+

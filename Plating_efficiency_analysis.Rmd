@@ -1,0 +1,69 @@
+---
+title: "Plating Efficiency Analysis"
+author: "Craig Miller"
+date: "3/24/2022"
+output: html_document
+---
+
+```{r results="asis", echo=FALSE, include=FALSE,}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+  library(Biostrings)
+  library(lattice)
+  setwd("/Users/craigmiller/Dropbox/protein G structure/1st Paper/jt_code/phiX_biophysical_modeling/") 
+```
+
+## Overview
+
+
+```{r}
+
+    # Background on genetic code (codons to amion acids)
+      gen.code <- as.data.frame(cbind(codon=names(GENETIC_CODE), AA=GENETIC_CODE))
+      AA.v <- unique(gen.code$AA)
+      codons.by.AA <- lapply(AA.v, function(x) gen.code$codon[which(gen.code$AA==x)])
+      names(codons.by.AA) <- AA.v
+    
+    # Read counts for all the original ligation mixes
+      cod.data <- read.csv(file="results/start_freq_codon_combined.csv")
+      cod.cols <- sapply(gen.code$codon, function(x) which(colnames(cod.data)==x))
+      cod.data0 <- cod.data[,cod.cols]
+      rownames(cod.data0) <- cod.data$sample
+      
+    # For G4_redo and G125_redo, G3 and G11, sum over replicates
+      g4.redo.rows <- sapply(c("G4_redo_t0_rep1", "G4_redo_t0_rep2", "G4_redo_t0_rep3"), function(x) which(rownames(cod.data0)==x))
+      g4.redo.sums <- colSums(cod.data0[g4.redo.rows,])
+      g125.redo.rows <- sapply(c("G125_redo_t0_rep1", "G125_redo_t0_rep2", "G125_redo_t0_rep3"), function(x) which(rownames(cod.data0)==x))
+      g125.redo.sums <- colSums(cod.data0[g125.redo.rows,])
+      g3.redo.rows <- sapply(c("G3_t0_rep1", "G3_t0_rep2", "G3_t0_rep3"), function(x) which(rownames(cod.data0)==x))
+      g3.redo.sums <- colSums(cod.data0[g3.redo.rows,])
+      g11.redo.rows <- sapply(c("G11_t0_rep1", "G11_t0_rep2", "G11_t0_rep3"), function(x) which(rownames(cod.data0)==x))
+      g11.redo.sums <- colSums(cod.data0[g11.redo.rows,])
+      
+    # Now place the sums in a data.frame: cod.data2
+      cod.data2 <- cod.data0[-c(g4.redo.rows, g125.redo.rows, g3.redo.rows, g11.redo.rows),]
+      cod.data2 <- rbind(cod.data2, g4_redo=g4.redo.sums, g125_redo=g125.redo.sums, g3_lig_mix=g3.redo.sums, g11_lig_mix=g11.redo.sums)
+
+     # Convert from codon counts to codon frequencies
+      cod.freqs <- t(apply(cod.data2, 1, function(x) x/sum(x)))
+      
+    # Convert from codon frequencies to amino acid frequencies
+      AA.freqs.by.samp <- as.data.frame(matrix(nrow=dim(cod.data2)[1], ncol=length(AA.v)))
+      rownames(AA.freqs.by.samp) <- rownames(cod.data2)  #cod.data$site
+      colnames(AA.freqs.by.samp) <- AA.v
+      for (samp.i in 1:length(cod.data2[,1])){
+        for (AA.i in 1:length(AA.v)){
+          cod.this.AA.dex <- sapply(codons.by.AA[[AA.i]], function(x) which(colnames(cod.freqs)==x))
+          AA.freqs.by.samp[samp.i, AA.i] <- sum(cod.freqs[samp.i, cod.this.AA.dex])
+        }
+      }
+    
+    # Remove stop codon and normalize remaining frequencies to one
+      stop.col <- which(colnames(AA.freqs.by.samp)=="*")
+      emp.freqs.0 <- AA.freqs.by.samp[,-stop.col]
+      emp.freqs <- t(apply(emp.freqs.0, 1, function(x) x/sum(x)))
+
+    # Read in viability matrix (that includes singles)
+      vaib.matrix.all <- read.csv(file="results/Viability_matrix_wsingles.csv")
+      
+      
+```

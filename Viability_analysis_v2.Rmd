@@ -1,0 +1,313 @@
+---
+title: "Viability_analysis"
+author: "Craig Miller"
+date: "3/10/2022"
+output: html_document
+---
+```{r results="asis", echo=FALSE, include=FALSE,}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+  library(Biostrings)
+  library(lattice)
+  setwd("/Users/craigmiller/Dropbox/protein G structure/1st Paper/jt_code/phiX_biophysical_modeling/") 
+  source("R_viability_posterior_fnxs.R")
+```
+
+## Overview
+This code determines how confident we can be that unobserved mutations are not viable. This is done in a Bayeisan framework using a multinomial sampling model. Details are provided in the methods section of the main paper. The goal is to take each site and calculate the posterior probability that a given unobserved amino acid is viable. When this probability is sufficiently small, we can be confident that the amino acid is not viable. When this probability is not small, it suggests some form of further replication is appropriate (see paper). We are only very interested in the probability that the obseved vector of viable and inviable amino acids at a site is the true vector of vaible and inviable amino acids (P_{obs=true}). When this probabiltiy is near one it suggests further repication at the site is not needed. 
+
+In pactice, this code was used to guide the number of plaques sequenced from each mix. Two mixes remade (from new primers) due to poor codon coverage (g4 and g125). After extensive replication, we shifted to using the code to identifying sites and amino acids that were not observed, but where uncertainy remained about the nonviability. We then used site-directed mutagensesis to make these particular mutations--called "singles" here. In step 4 below we reduce the data to one row per site, and then in step 5 we import the singles data and use it to create a heatmap of posterior probability and 0/1 viability.
+
+
+Steps
+1. Estimate frquency of each amino acid in each ligation mix from read count data
+2. Collect observed amino acid count data for each mix. Create obsvered vaiblity matrix.
+3. Calculate posteriors for each mix
+4. Reduce to 21 sites (remove data from original g4 and g125 mixes)
+5. Import singles and make heatmap of posteriors
+
+
+#### Step 1: Amino acid frequencies in ligation mixes
+```{r frequencies}
+    setwd("/Users/craigmiller/Dropbox/protein G structure/1st Paper/jt_code/phiX_biophysical_modeling/results/") 
+    # Background on genetic code (codons to amion acids)
+      gen.code <- as.data.frame(cbind(codon=names(GENETIC_CODE), AA=GENETIC_CODE))
+      AA.v <- unique(gen.code$AA)
+      codons.by.AA <- lapply(AA.v, function(x) gen.code$codon[which(gen.code$AA==x)])
+      names(codons.by.AA) <- AA.v
+    
+    # Read counts for all the original ligation mixes
+      cod.data <- read.csv(file="start_freq_codon_combined.csv")
+      cod.cols <- sapply(gen.code$codon, function(x) which(colnames(cod.data)==x))
+      cod.data0 <- cod.data[,cod.cols]
+      rownames(cod.data0) <- cod.data$sample
+      
+    # For G4_redo and G125_redo, G3 and G11, sum over replicates
+      g4.redo.rows <- sapply(c("G4_redo_t0_rep1", "G4_redo_t0_rep2", "G4_redo_t0_rep3"), function(x) which(rownames(cod.data0)==x))
+      g4.redo.sums <- colSums(cod.data0[g4.redo.rows,])
+      g125.redo.rows <- sapply(c("G125_redo_t0_rep1", "G125_redo_t0_rep2", "G125_redo_t0_rep3"), function(x) which(rownames(cod.data0)==x))
+      g125.redo.sums <- colSums(cod.data0[g125.redo.rows,])
+      g3.redo.rows <- sapply(c("G3_t0_rep1", "G3_t0_rep2", "G3_t0_rep3"), function(x) which(rownames(cod.data0)==x))
+      g3.redo.sums <- colSums(cod.data0[g3.redo.rows,])
+      g11.redo.rows <- sapply(c("G11_t0_rep1", "G11_t0_rep2", "G11_t0_rep3"), function(x) which(rownames(cod.data0)==x))
+      g11.redo.sums <- colSums(cod.data0[g11.redo.rows,])
+      
+    # Now place the sums in a data.frame: cod.data2
+      cod.data2 <- cod.data0[-c(g4.redo.rows, g125.redo.rows, g3.redo.rows, g11.redo.rows),]
+      cod.data2 <- rbind(cod.data2, g4_redo=g4.redo.sums, g125_redo=g125.redo.sums, g3_lig_mix=g3.redo.sums, g11_lig_mix=g11.redo.sums)
+
+     # Convert from codon counts to codon frequencies
+      cod.freqs <- t(apply(cod.data2, 1, function(x) x/sum(x)))
+      
+    # Convert from codon frequencies to amino acid frequencies
+      AA.freqs.by.samp <- as.data.frame(matrix(nrow=dim(cod.data2)[1], ncol=length(AA.v)))
+      rownames(AA.freqs.by.samp) <- rownames(cod.data2)  #cod.data$site
+      colnames(AA.freqs.by.samp) <- AA.v
+      for (samp.i in 1:length(cod.data2[,1])){
+        for (AA.i in 1:length(AA.v)){
+          cod.this.AA.dex <- sapply(codons.by.AA[[AA.i]], function(x) which(colnames(cod.freqs)==x))
+          AA.freqs.by.samp[samp.i, AA.i] <- sum(cod.freqs[samp.i, cod.this.AA.dex])
+        }
+      }
+    
+    # Remove stop codon and normalize remaining frequencies to one
+      stop.col <- which(colnames(AA.freqs.by.samp)=="*")
+      emp.freqs.0 <- AA.freqs.by.samp[,-stop.col]
+      emp.freqs <- t(apply(emp.freqs.0, 1, function(x) x/sum(x)))
+      
+    # Write csv files
+      write.csv(AA.freqs.by.samp, file="AA_and_stop_freqs_by_mix.csv")
+      write.csv(emp.freqs, file="AA_freqs_by_mix.csv")
+```
+
+#### Step 2: Collect observed amino acid count data for each mix. Create obsvered vaiblity matrix.
+```{r}
+  setwd("/Users/craigmiller/Dropbox/protein G structure/1st Paper/jt_code/phiX_biophysical_modeling/rawdata/sanger_reads/") 
+    
+  #Loop through all mixes, read in csv file with sequencing result for each plaque picked. Put in data.raw.
+    data.raw <- vector("list", dim(emp.freqs)[1])
+    names(data.raw) <- rownames(emp.freqs)
+    for (mix.i in 1:dim(emp.freqs)[1]){
+      site <- strsplit(rownames(emp.freqs)[mix.i], split="_")[[1]][1]
+      if (strsplit(rownames(emp.freqs)[mix.i], split="_")[[1]][2]=="redo"){   # Redos have "new" identifier in name
+        file.name <- paste(site, "new.csv", sep="")
+      } else {
+        file.name <- paste(site, ".csv", sep="")
+      }
+      data.raw[[mix.i]] <- read.csv(file=file.name)
+    }
+    
+  # Get a cleaned version (data.cleaned) with ambiguous resuluts (hets) removed
+    aa.col <- unlist(lapply(data.raw, function(x) which(colnames(x)=="aa")))
+    s <- seq(1, length(data.raw))
+    data.cleaned2 <- lapply(s, function(x) which(is.na(data.raw[[x]][,aa.col[x]])==FALSE))
+    data.cleaned3 <- lapply(s, function(x) data.raw[[x]][data.cleaned2[[x]],])
+    data.cleaned <- data.cleaned3
+    names(data.cleaned) <- names(data.raw)
+    
+  # Convert data.cleaned to count data list (data.counts)
+    cats <- as.character(AA.v[-which(AA.v=="*")])
+    data.counts <- lapply(s, function(x) sapply(cats, function(y) length(which(data.cleaned[[x]][,aa.col[x]]==y))))
+    names(data.counts) <- names(data.raw)
+    
+    data.raw.sites.withg <- unlist(lapply(names(data.raw), function(x) strsplit(x, split="_")[[1]][1]))
+    data.raw.sites <- as.numeric(sapply(data.raw.sites.withg, function(x) substring(x, 2, nchar(x))))
+  
+  # Convert data.counts list into count matrix (counts.matrix) and this into 0/1 viability matrix (viab.matrix)
+    counts.matrix <- as.data.frame(matrix(nrow=length(data.raw), ncol=20))
+    colnames(counts.matrix) <- cats
+    rownames(counts.matrix) <- names(data.raw)
+    for (i in 1:length(data.raw)){
+      counts.matrix[i,] <- data.counts[[i]]
+    }
+    viab.matrix <- t(apply(counts.matrix, 1, function(x) as.numeric(x>0)))
+    colnames(viab.matrix) <- cats
+    rownames(viab.matrix) <- names(data.raw)
+
+```
+
+
+#### Step 3: Cauclate posteriors for each mix
+```{r}
+  # Establish data.results to put results in
+    data.results <- vector("list", length(data.cleaned))
+    names(data.results) <- names(data.cleaned)
+    
+  # Get wild type AA at each site 
+    G.wt.DNA <- readDNAStringSet(filepath="rawdata/G_wt.fasta")
+    G.wt.AA <- translate(G.wt.DNA)
+    data.wt <- strsplit(as.character(G.wt.AA), split="")
+    data.wt <- unname(unlist(data.wt))
+    
+  # Loop through each mix
+    for (i in 1:length(data.counts)){
+      print(i)
+      mix.name <- names(data.cleaned)[i]
+      mix.dex <- which(rownames(emp.freqs)==mix.name)
+      site.i <- data.raw.sites[i]
+      cat.probs.to.use <- emp.freqs[mix.dex,]   # frequencies by AA in this mix
+      data.results[[i]] <- calc.posteriors.details(data=data.counts[[i]], wt=data.wt[site.i], viable.01=NA, cat.probs.to.use)
+    }
+    
+  # Summarize results in a smry table 
+    smry.table <- as.data.frame(matrix(nrow=length(data.cleaned), ncol=9+20))
+    colnames(smry.table) <- c("Mix", "Site", "Samp.N", "Sites.obs", "Post.obs", "Post.mode", "Mode.prob", "Upper.95", "Upper.99", names(data.results[[1]]$prob.by.AA))
+
+    for (i in 1:length(data.cleaned)){
+      smry.table$Mix[i] <- names(data.results)[i]
+      smry.table$Site[i] <- as.integer(data.raw.sites[i])
+      smry.table$Samp.N[i] <- as.integer(data.results[[i]][[1]][1])
+      smry.table$Sites.obs[i] <- as.integer(data.results[[i]][[1]][3])
+      smry.table$Post.obs[i] <- as.numeric(data.results[[i]][[1]][5])
+      smry.table$Post.mode[i] <- as.numeric(data.results[[i]][[1]][6])
+      smry.table$Mode.prob[i] <- as.numeric(data.results[[i]][[1]][7])
+      smry.table$Upper.95[i] <- as.numeric(data.results[[i]][[1]][8])
+      smry.table$Upper.99[i] <- as.numeric(data.results[[i]][[1]][9])
+      smry.table[i,10:29]  <- as.numeric(data.results[[i]][[3]])
+    }
+    smry.table.,ord <- smry.table[order(smry.table$Site),]
+    setwd("/Users/craigmiller/Dropbox/protein G structure/1st Paper/jt_code/phiX_biophysical_modeling/results/") 
+    write.csv(smry.table.ord, file="Posterior_probabilities_3_23_22.csv", row.names=F)
+```
+
+####4. Reduce to 21 sites (remove data from original g4 and g125 mixes)
+```{r}
+  removes <- which(smry.table$Mix %in% c("g125_lig_mix", "g4_lig_mix"))
+  smry.table.trim <- smry.table[-removes,]
+  order.sites <- order(smry.table.trim$Site)
+  smry.table.trim <- smry.table.trim[order.sites,]
+  rownames(smry.table.trim) <- smry.table.trim$Site
+  
+  viab.matrix.trim <- viab.matrix[-removes,]
+  viab.matrix.trim <- viab.matrix.trim[order.sites,]
+  
+```
+
+####5. Import singles, update viability matrix
+```{r}
+  # Import singles results
+    setwd("/Users/craigmiller/Dropbox/protein G structure/1st Paper/jt_code/phiX_biophysical_modeling/") 
+    singles <- read.csv(file="rawdata/singles_trimmed.csv")
+    singles <- cbind(singles, mut=paste(singles$Site, singles$AA, sep=""))
+    
+  # Update viability matrix with singles and output it
+    sites.in.viab.0 <- sapply(rownames(viab.matrix.trim), function(x) unlist(strsplit(x, "_"))[1])
+    sites.in.viab <- as.numeric(sapply(sites.in.viab.0, function(x) substring(x, 2, nchar(x))))
+    viab.matrix.all <- viab.matrix.trim
+    rownames(viab.matrix.all) <- sites.in.viab
+    
+    single.viabs <- which(singles$Viable == 1)
+    for (i in 1:length(single.viabs)){
+      site <- singles$Site[single.viabs[i]]
+      aa <- as.character(singles$AA[single.viabs[i]])
+      site.row <- which(rownames(viab.matrix.all)==site)
+      aa.col <- which(colnames(viab.matrix.all)==aa)
+      viab.matrix.all[site.row, aa.col] <- 1
+    }
+    write.csv(viab.matrix.all, file="results/Viability_matrix_wsingles.csv")
+    
+    
+```
+
+
+#### 6. Make heatmap of posteriors
+```{r}
+    
+    
+  # Create plot
+  setwd("/Users/craigmiller/Dropbox/protein G structure/1st Paper/jt_code/phiX_biophysical_modeling/results/") 
+  png(filename="Posterior_heatmap.png", width=800, height=800)
+    plot(0,0, type="n", xlim=c(0.75,25), ylim=c(-1.5,21), ylab="Amino Acid", xlab="Site", xaxt="n", yaxt="n", bty="n")
+    axis(side=1, at=seq(1,21)-0.5, labels=c(rownames(scale.probs.simp)), cex.axis=1, las=2, tick=F, line=-0.5)
+    axis(side=2, at=seq(-1,20)-0.5, labels=c("ALL", "", colnames(scale.probs.simp)), cex.axis=1, tick=F, las=1, line=-0.5)
+    
+    prob.cols <- sapply(cats, function(x) which(colnames(smry.table.trim)==x))
+    probs <- smry.table.trim[,prob.cols]
+    log.probs <- log(probs)
+    scale.probs <- round(-log.probs*10)
+    ceiling <- round(-log(0.0001)*10) + 1
+    scale.probs.simp <- scale.probs
+    scale.probs.simp <- scale.probs.simp+1
+    scale.probs.simp[which(scale.probs>ceiling, arr.ind=T)] <- ceiling
+    P.obs <- smry.table.trim$Post.obs
+    P.obs.log <- round(-log(P.obs)*10) + 1
+    ceiling2 <- round(-log(0.1)*10) + 1
+    
+    colors <- c("white", "darkred")
+    colors2 <- c("white", "darkblue")
+    color.ramp <- colorRampPalette(colors)(ceiling+1)
+    color.ramp2 <- colorRampPalette(colors2)(ceiling2+1)
+    text.cex <- 1.2
+    
+    for (site.i in 1:21){
+      site <- as.numeric(rownames(scale.probs.simp)[site.i])
+      rect(site.i-1, -2, site.i, -1 , col=color.ramp2[P.obs.log[site.i]], border=NA)
+      wt.aa <- data.wt[smry.table.trim$Site[site.i]]
+      for (aa.i in 1:20){
+        aa <- colnames(scale.probs.simp[aa.i])
+        mut <- paste(site, aa, sep="")
+        border <- NA
+        if (colnames(scale.probs.simp[aa.i])==wt.aa){
+          border <- "black"
+        }
+        rect(site.i-1,aa.i-1, site.i, aa.i, col=color.ramp[scale.probs.simp[site.i, aa.i]], border=border, lwd=2)
+        if (viab.matrix.trim[site.i, aa.i]==1){
+          text(site.i-0.5, aa.i-0.5, labels="1", cex=text.cex)
+        } else if (mut %in% singles$mut){
+            dex <- which(singles$mut == mut)
+            if (length(dex)==1){
+              if (singles$Viable[dex]==1){
+                text(site.i-0.5, aa.i-0.5, labels="0/+", cex=text.cex)
+              } else{
+                text(site.i-0.5, aa.i-0.5, labels="0/-", cex=text.cex)
+              }
+            }
+        } else if (mut == "128W"){
+          text(site.i-0.5, aa.i-0.5, labels="0*", cex=text.cex)
+        } else{
+          text(site.i-0.5, aa.i-0.5, labels="0", cex=text.cex)
+        }  
+      }  #next aa.i
+    }  #next site.i
+    
+
+
+    
+for (site.i in 1:21){
+  wt.aa <- data.wt[smry.table.trim$Site[site.i]]
+  aa.dex <- which(colnames(scale.probs.simp) == wt.aa)
+  rect(site.i-1,aa.dex-1, site.i, aa.dex, col=NA, border="black", lwd=2)
+}
+  
+    #text(23.5, 11.5, labels="Posteriors", cex=0.8, font=2)
+    lab.cex <- 1.2
+    scale.cex <- 1.2
+    text(24, 10.5, labels="P(viable)", cex=lab.cex)
+    vals <- c(0.0001, 0.001, 0.01, 0.1, 1)
+    scale.probs <- round(-log(vals)*10)+1
+    for (i in 1:5){
+      rect(23.5, i+4, 24.5, i+5, col=color.ramp[scale.probs[i]], border="grey")
+      text(22.75, i+4.5, labels=vals[i], cex=scale.cex)
+    } 
+    text(24, 3.5, labels="P(obs=true)", cex=lab.cex)
+    vals2 <- c(0.1, 0.5, 0.9, 0.95, 1)
+    scale.probs2 <- round(-log(vals2)*10)+1
+    for (i in 1:5){
+      rect(23.5, i-3, 24.5, i-2, col=color.ramp2[scale.probs2[i]], border="grey")
+      text(22.75, i-2.5, labels=vals2[i], cex=scale.cex)
+    }  
+    
+    rect(23.5, 14, 24.5, 15, border="black", lwd=2)
+    text(24, 15.5, labels="Wildtype", cex=lab.cex)
+    
+    for (i in 0:21){  #vertical lines
+      points(x=c(i,i), y=c(-2,20), lwd=0.3, col="grey", type="l")
+    }
+    for (j in -2:20){  #horizongtal lines
+      points(x=c(0,21), y=c(j,j), col="grey", type="l", lwd=0.3)
+    }
+    
+    
+  dev.off()
+    
+  
+```

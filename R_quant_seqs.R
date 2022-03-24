@@ -8,7 +8,7 @@ library(reshape2)
 library(kableExtra)
 
 ref <- readDNAStringSet("rawdata/G_wt.fasta")
-refaa <- translate(ref)
+refaa <- Biostrings::translate(ref)
 PHIX_GENETIC_CODE <- GENETIC_CODE
 attr(PHIX_GENETIC_CODE, "alt_init_codons") <- "ATG"
 
@@ -895,31 +895,31 @@ sum(table(table$aa))/nrow(table)
 
 #####a little random analysis
 #wts G8-R , G15-S , G74-S, G80-A, G123-V, G106-A, G117-D, G43-Y
-g3 <- read.csv("results/g3.csv", header=T, row.names = 1)
-g4 <- read.csv("results/g4.csv", header=T, row.names = 1)
-g4_re <- read.csv("results/g4_reorder.csv", header=T, row.names = 1)
-g8 <- read.csv("results/g8.csv", header=T, row.names = 1)
-g8_NNK <- read.csv("results/g8_nnk.csv", header=T, row.names = 1)
-g11 <- read.csv("results/g11.csv", header=T, row.names = 1)
-g15 <- read.csv("results/g15.csv", header=T, row.names = 1)
-g15_NNK <- read.csv("results/g15_NNK.csv", header=T, row.names = 1)
-g41 <- read.csv("results/g41.csv", header=T, row.names = 1)
-g43 <- read.csv("results/g43.csv", header=T, row.names = 1)
-g45 <- read.csv("results/g45.csv", header=T, row.names = 1)
-g72 <- read.csv("results/g72.csv", header=T, row.names = 1)
-g74 <- read.csv("results/g74.csv", header=T, row.names = 1)
-g80 <- read.csv("results/g80.csv", header=T, row.names = 1)
-g81 <- read.csv("results/g81.csv", header=T, row.names = 1)
-g88 <- read.csv("results/g88.csv", header=T, row.names = 1)
-g106 <- read.csv("results/g106.csv", header=T, row.names = 1)
-g117 <- read.csv("results/g117.csv", header=T, row.names = 1)
-g119 <- read.csv("results/g119.csv", header=T, row.names = 1)
-g123 <- read.csv("results/g123.csv", header=T, row.names = 1)
-g125 <- read.csv("results/g125.csv", header=T, row.names = 1)
-g125_re <- read.csv("results/g125_reorder.csv", header=T, row.names = 1)
-g128 <- read.csv("results/g128.csv", header=T, row.names = 1)
-g129 <- read.csv("results/g129.csv", header=T, row.names = 1)
-g148 <- read.csv("results/g148.csv", header=T, row.names = 1)
+g3 <- read.csv("rawdata/sanger_reads/g3.csv", header=T, row.names = 1)
+g4 <- read.csv("rawdata/sanger_reads/g4.csv", header=T, row.names = 1)
+g4_re <- read.csv("rawdata/sanger_reads/g4new.csv", header=T, row.names = 1)
+g8 <- read.csv("rawdata/sanger_reads/g8.csv", header=T, row.names = 1)
+g8_NNK <- read.csv("rawdata/sanger_reads/g8_nnk.csv", header=T, row.names = 1)
+g11 <- read.csv("rawdata/sanger_reads/g11.csv", header=T, row.names = 1)
+g15 <- read.csv("rawdata/sanger_reads/g15.csv", header=T, row.names = 1)
+g15_NNK <- read.csv("rawdata/sanger_reads/g15_NNK.csv", header=T, row.names = 1)
+g41 <- read.csv("rawdata/sanger_reads/g41.csv", header=T, row.names = 1)
+g43 <- read.csv("rawdata/sanger_reads/g43.csv", header=T, row.names = 1)
+g45 <- read.csv("rawdata/sanger_reads/g45.csv", header=T, row.names = 1)
+g72 <- read.csv("rawdata/sanger_reads/g72.csv", header=T, row.names = 1)
+g74 <- read.csv("rawdata/sanger_reads/g74.csv", header=T, row.names = 1)
+g80 <- read.csv("rawdata/sanger_reads/g80.csv", header=T, row.names = 1)
+g81 <- read.csv("rawdata/sanger_reads/g81.csv", header=T, row.names = 1)
+g88 <- read.csv("rawdata/sanger_reads/g88.csv", header=T, row.names = 1)
+g106 <- read.csv("rawdata/sanger_reads/g106.csv", header=T, row.names = 1)
+g117 <- read.csv("rawdata/sanger_reads/g117.csv", header=T, row.names = 1)
+g119 <- read.csv("rawdata/sanger_reads/g119.csv", header=T, row.names = 1)
+g123 <- read.csv("rawdata/sanger_reads/g123.csv", header=T, row.names = 1)
+g125 <- read.csv("rawdata/sanger_reads/g125.csv", header=T, row.names = 1)
+g125_re <- read.csv("rawdata/sanger_reads/g125new.csv", header=T, row.names = 1)
+g128 <- read.csv("rawdata/sanger_reads/g128.csv", header=T, row.names = 1)
+g129 <- read.csv("rawdata/sanger_reads/g129.csv", header=T, row.names = 1)
+g148 <- read.csv("rawdata/sanger_reads/g148.csv", header=T, row.names = 1)
 
 
 
@@ -967,7 +967,8 @@ kable(ktable, "html") %>%
 
 all_cods <- na.omit(all_cods[!all_cods$codon == "het",])
 all_cods$isolate <- paste(str_split(all_cods$sample.names,"-",simplify = T)[,1],all_cods$codon,sep="_")
-length(unique(all_cods$isolate)) #470
+length(unique(all_cods$isolate)) #585
+#write.csv(all_cods, "results/all_cods.csv", quote = F, row.names = F)  ##has both redo and original genotyping results
 
 ###get me some basic stats
 filt <- data.frame(table(str_split(all_cods$sample.names, "-", simplify = T)[,1]))
@@ -1078,4 +1079,4 @@ miss <- data.frame(matrix(nrow=nrow(all.wide), ncol=length(aas.miss)))
 names(miss) <- aas.miss
 
 all.wide <- cbind(all.wide,miss)
-write.csv(all.wide, "results/protein_G_mutagenesis_AA_counts.csv")
+#write.csv(all.wide, "results/protein_G_mutagenesis_AA_counts.csv")
